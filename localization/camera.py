@@ -1,9 +1,10 @@
 import numpy as np
 import cv2 as cv
 import time
+import colorsys
 
-from helper_functions import *
-from vehicle import Vehicle
+from .helper_functions import *
+from .vehicle import Vehicle
 
 class Camera:
     #Hue from (HSV model)
@@ -35,8 +36,8 @@ class Camera:
                  distortionCoefficients = np.array([[ 0.02473071, -0.39668063,  0.00151336,  0.00085757,  0.25759047]])
                  ):
         #self.cap = cv.VideoCapture(0) #use default camera driver (might not support 90fps)
-        #self.cap = cv.VideoCapture(0, cv.CAP_V4L) #use V4L to access the camera
-        self.cap = cv.VideoCapture("/Users/wette/Documents/FHBielefeld/eigeneVorlesungen/AutonomeFahrzeuge1zu32/moving_vehicle.avi")
+        self.cap = cv.VideoCapture(0, cv.CAP_V4L) #use V4L to access the camera
+        #self.cap = cv.VideoCapture("/Users/wette/Documents/FHBielefeld/eigeneVorlesungen/AutonomeFahrzeuge1zu32/moving_vehicle.avi")
         
         if not self.cap.isOpened():
             print("Cannot open camera")
@@ -106,8 +107,10 @@ class Camera:
     #also computes the correct value for meters_to_pixels
     def cameraCalibrationWizard(self):
         print("position the four 3d-printed chessboard pieces in the four corners of the racetrack.")
-        print("press any key if done to start calibrating. If you are happy with the result, exit routine by pressing q.")
+        print("press any key if done.")
         input()
+
+        print("Starting calibration process.\nIf you are happy with the result, exit routine by pressing q.")
 
         while True:
             # read frame
@@ -146,11 +149,15 @@ class Camera:
                 ret, corners = cv.findChessboardCorners(img, (3, 3), None)
 
                 if ret:
-                    regionCenters.append( (corners[4][0][0] + xoff,
-                                           corners[4][0][1] + yoff) )
+                    regionCenters.append( (int(corners[4][0][0] + yoff),
+                                           int(corners[4][0][1] + xoff)) )
+                    
+                    cv.drawChessboardCorners(frame, (3,3), np.array([[[c[0][0]+yoff, c[0][1]+xoff]] for c in corners], dtype=np.float32), ret)
 
             if len(regionCenters) != 4:
-                print("Could not find all chessboard patterns")
+                print(f"Could not find all chessboard patterns ({len(regionCenters)}/4 detected)")
+                cv.imshow('frame', frame)
+                cv.waitKey(1)
                 continue
 
             #compute distances between markers to find out if camera is mounted in parallel to the racetrack
@@ -181,6 +188,16 @@ class Camera:
             if diffVertical > 20:
                 colorHueVertical = Camera.ColorMap["red"]
 
+            #convert hsv to rgb:
+            colorHueVertical = colorsys.hsv_to_rgb(colorHueVertical/360, 1, 1)
+            colorHueHorizontal = colorsys.hsv_to_rgb(colorHueHorizontal/360, 1, 1)
+            #convert rgb to bgr
+            colorHueVertical = (colorHueVertical[2]*255, colorHueVertical[1]*255, colorHueVertical[0]*255)
+            colorHueHorizontal = (colorHueHorizontal[2]*255, colorHueHorizontal[1]*255, colorHueHorizontal[0]*255)
+
+            diffVertical = min(max(int(diffVertical), 1), 100)
+            diffHorizontal = min(max(int(diffHorizontal), 1), 100)
+
             #color in values
             cv.line(frame, regionCenters[0], regionCenters[3], color=colorHueVertical, thickness=diffVertical)
             cv.line(frame, regionCenters[1], regionCenters[2], color=colorHueVertical, thickness=diffVertical)
@@ -203,8 +220,9 @@ class Camera:
                 #how many pixels are in a meter?
                 real_world_distance_across_meters = 2.5 #measured on racetrack from chessboard corner to chessboard corner
                 self.meters_to_pixels = meanDist / real_world_distance_across_meters
-
-                print("meters_to_pixels is {self.meters_to_pixels}. Adjust constant in code acordingly!")
+                print("################")
+                print(f"meters_to_pixels is {self.meters_to_pixels}. Adjust constant in code acordingly!!!!!!!!")
+                print("################")
 
                 return
 
@@ -314,7 +332,7 @@ class Camera:
         return black_dots, white_dots, frame
     
     #figure out color of a vehicle at a given position
-    def getColorOfVehicle(self, frame: cv.typing.MatLike, x: int, y: int, yaw: float) -> str:
+    def getColorOfVehicle(self, frame, x: int, y: int, yaw: float) -> str:
         #assumption: black circle is surrounded by vehicle color.
         # hence, add a vector of size 1cm to the vehicle position (position of black circle) pointing in yaw direction
         x_a, y_a = rotate(x=0.01*self.meters_to_pixels + self.circle_diameter_px/2.0, y=0, alpha=yaw)

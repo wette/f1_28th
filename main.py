@@ -27,14 +27,14 @@ vehicles = {
 }
 
 #camera parameters
-vertical_resolution_px = 1080
+vertical_resolution_px = 1200
 horizontal_resolution_px = 1920
 frames_per_seconds = 90
 opening_angle_vertical_degrees = 88.0
 opening_angle_horizontal_degrees = 126.0
 
 #physical parameters of camera and vehicle features
-meters_to_pixels = 1075     #how many pixels are in one meter?
+meters_to_pixels = 644.3806269957947     #how many pixels are in one meter?
 max_speed_vehicle_mps = 4.0        #max speed of a car in meters per second
 minimum_brightness = 2.7   #used to brighten the image of the webcam
 threshold_brightness_of_black = 150       #rgb from 0-255
@@ -54,7 +54,7 @@ distortionCoefficients = np.array([[ 0.02473071, -0.39668063,  0.00151336,  0.00
 def main():
 
     #setup camera
-    cam = Camera(vercal_resolution_px = vertical_resolution_px,
+    cam = Camera(vertical_resolution_px = vertical_resolution_px,
                  horizontal_resolution_px = horizontal_resolution_px,
                  frames_per_seconds = frames_per_seconds,
                  opening_angle_vertical_degrees = opening_angle_vertical_degrees,

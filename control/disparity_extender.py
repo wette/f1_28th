@@ -1,4 +1,4 @@
-from sensor import Sensor
+#from sensor import Sensor
 import numpy as np
 import shapely
 import matplotlib.pyplot as plt

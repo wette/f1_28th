@@ -3,8 +3,8 @@ import numpy
 import socket
 import struct
 
-from helper_functions import *
-from pid_controller import PIDController
+from .helper_functions import *
+from .pid_controller import PIDController
 
 from control.disparity_extender import DisparityExtender
 from control.lidarSensor import LidarSensor
@@ -58,7 +58,7 @@ class Vehicle:
         self.ttl = 5
 
     def drivingLoop(self):
-
+        pass
 
     def setPhysicalProperties(self, length_m, width_m, rear_axle_offset_m, max_steering_angle_deg, steering_angle_offset_deg):
         self.length_px = length_m * self.meters_to_pixels
