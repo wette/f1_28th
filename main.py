@@ -4,6 +4,11 @@ from control.track import Track
 import numpy as np
 import math
 
+from multiprocessing import Process, Manager
+import cv2 as cv
+import time
+import copy
+
 
 #ip addresses of vehicles
 vehicles = {
@@ -39,7 +44,7 @@ opening_angle_horizontal_degrees = 126.0
 #physical parameters of camera and vehicle features
 meters_to_pixels = 681     #how many pixels are in one meter?
 max_speed_vehicle_mps = 4.0        #max speed of a car in meters per second
-minimum_brightness = 2.0#1.0 #2.7   #used to brighten the image of the webcam
+minimum_brightness = 1.0 #2.7   #used to brighten the image of the webcam
 threshold_brightness_of_black = 150       #rgb from 0-255
 threshold_brightness_of_white = 200        #rgb from 0-255
 circle_diameter_meters = 0.025  #diameter of black and white dots (2cm)
@@ -52,6 +57,53 @@ cameraMatrix = np.array([[1.19164513e+03, 0.00000000e+00, 9.32255365e+02],
                          [0.00000000e+00, 1.19269246e+03, 5.44789222e+02],
                          [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
 distortionCoefficients = np.array([[ 0.02473071, -0.39668063,  0.00151336,  0.00085757,  0.25759047]])
+
+
+# this code is running in another process. 
+# Data is transfered from the main thread using the d parameter
+def showImageThread(d: dict):
+    while d["showVisualization"]:
+        frame = d["frame"]
+        vehicles = d["vehicles"]
+
+        if frame is not None:
+            #draw vehicle bounding boxes:
+            for vehicle in vehicles:
+                boundingbox = vehicle.getBoundingBox(time.time()) #TODO: think about which time to use here!
+                color = (0, 255, 0)
+                if vehicle.ttl < 15:
+                    color = (0, 0, 255)
+                Camera.drawBoundingBox(frame, boundingbox, color=color)
+                cv.putText(frame, f"Speed: {vehicle.getSpeed():.2f} m/s", (int(boundingbox[0][0]), int(boundingbox[0][1])), cv.FONT_HERSHEY_SIMPLEX, 0.5,
+                            (0,255,0), 1, cv.LINE_AA)
+                
+            cv.imshow('frame', frame)
+            if cv.waitKey(1) == ord('q'):
+                break
+
+# this code is running in another process. 
+# Data is transfered from the main thread using the d parameter
+def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
+    while d["raceEnabled"]:
+        if vehicleColor not in d["vehicles"]:
+            print(f"Stopping controlVehicleThread for the {vehicleColor} vehicle as it is no longer found on the racetrack.")
+            return
+        v = d["vehicles"][vehicleColor]
+
+        x, y, yaw = v.getPositionEstimate(0.0)  #TODO: insert delay between frame capture and vehicle action here!
+        #compute vehicle actions
+        target_velocity_mps, target_steering_angle_deg = v.controller.compute_next_command(x, 
+                                                                                    y, 
+                                                                                    yaw, 
+                                                                                    v.vehicle_speed,
+                                                                                    delta_t=delta_t)
+
+        #send actions to vehicle
+        v.sendControlsToHardware(target_velocity_mps=target_velocity_mps,
+                                    target_steering_angle_rad=math.radians(target_steering_angle_deg))
+        
+        time.sleep(1.0/90.0) #execute with 90 Hz-ish TODO: make real 90Hz!
+
 
 
 def main():
@@ -83,12 +135,29 @@ def main():
     #calibrate track
     print("Do you want to re-set the track boundaries (y/n)?")
     key = input()
+    t = Track()
     if key.upper() == "Y":
-        t = Track()
+        
         t.manuallyPickTrackBorders(cam.get_frame())
         t.saveToFile("track_borders.npy")
+    else:
+        t.loadFromFile("track_borders.npy")
+
+    #create manager object for multiprocessing
+    manager = Manager()
+    d = manager.dict()
+    d["frame"] = None
+    d["vehicles"] = []
+    d["showVisualization"] = True
+    d["raceEnabled"] = False #True
 
 
+    #spawn one process for visualization:
+    process_visualization = Process(target=showImageThread, args=(d, ))
+    process_visualization.start()
+
+    #list of processes - one for each vehicle to compute steering commands
+    control_processes = {}
 
     while True:
         if cam.detectVehicles() > 0:
@@ -106,16 +175,18 @@ def main():
                     #setup IP communication
                     v.initNetworkConnection(ip_adress=vehicles[v.color]["ip"], port=vehicles[v.color]["port"])
 
-                    #setup servo parameters
-                    v.servo_offset = vehicles[v.color]["servo_offset"]
-
                     #setup motor parameters
                     v.initMotorPID(vehicles[v.color]["motor_pid"][0],
                                    vehicles[v.color]["motor_pid"][1],
-                                   vehicles[v.color]["motor_pid"][2])
+                                   vehicles[v.color]["motor_pid"][2],
+                                   error_history_length=50)
                     
                     #setup controller
                     v.controller = None
+
+                    #create process for controlling:
+                    control_processes[v.color] = Process(target=controlVehicleThread, args=(d, v.color, 1.0/frames_per_seconds))
+                    control_processes[v.color].start()
                 else:
                     print("Could not properly detect color of vehicle!")
 
@@ -125,7 +196,12 @@ def main():
                 #update position of each vehicle
                 cam.trackVehicles()
 
-                for v in cam.tracked_vehicles:
+                #send frame and currently tracked vehicles to other processes
+                d["frame"] = cam.get_last_frame()
+                d["vehicles"] = [copy.copy(v) for v in cam.tracked_vehicles]
+
+                #this is now done in processes
+                """for v in cam.tracked_vehicles:
                     x, y, yaw = v.getPositionEstimate(0.0)  #TODO: insert delay between frame capture and vehicle action here!
                     #compute vehicle actions
                     target_velocity_mps, target_steering_angle_deg = v.controller.compute_next_command(x, 
@@ -136,11 +212,16 @@ def main():
 
                     #send actions to vehicle
                     v.sendControlsToHardware(target_velocity_mps=target_velocity_mps,
-                                             target_steering_angle_rad=math.radians(target_steering_angle_deg))
+                                             target_steering_angle_rad=math.radians(target_steering_angle_deg))"""
 
         else:
             print("Could not detect any vehicle - restarting.")
+            d["vehicles"] = []
 
+    #wait for all threads to end.
+    process_visualization.join()
+    for k in control_processes.keys():
+        control_processes[k].join()
 
 
 

@@ -8,8 +8,7 @@ from .vehicle import Vehicle
 
 class Camera:
     #Hue from (HSV model)
-    ColorMap = {"red"   : 0,
-                "green" : 120,
+    ColorMap = {"green" : 120,
                 "blue"  : 240,
                 "yellow" : 60,
                 "orange" : 15
@@ -83,12 +82,16 @@ class Camera:
         self.tracked_vehicles : list[Vehicle] = []  #vehicles found by the camera
         self.color_correct_ratio : float = 1.0
         self.current_time : float = 0
+        self.current_frame = None
 
         #for calculating FPS
         self.time_end = 0
         self.fps_buffer = []
 
         self.__setup_video_stream__()
+    
+    def get_last_frame(self):
+        return self.current_frame
 
     def get_frame(self):
         ret, frame = self.cap.read()
@@ -352,7 +355,7 @@ class Camera:
         #assumption: black circle is surrounded by vehicle color.
         # hence, add a vector of size 1cm to the vehicle position (position of black circle) pointing in yaw direction
         x_a, y_a = rotate(x=0.01*self.meters_to_pixels + self.circle_diameter_px/2.0, y=0, alpha=-yaw)
-        x = int(x-x_a)
+        x = int(x+x_a)
         y = int(y+y_a)
         if 0 < x < frame.shape[1] and 0 < y < frame.shape[0]:
                 color = frame[y,x]
@@ -363,7 +366,7 @@ class Camera:
                     if val-threshold < hue < val+threshold:
                         return name
                     
-                print("Error: Could not figure out which color the vehicle has: {color} (hue {hue}) at ({x},{y})")
+                print(f"Error: Could not figure out which color the vehicle has: {color} (hue {hue}) at ({x},{y})")
                 return None
 
         print("Error: Vehicle out of bounds: ({x},{y})")
@@ -389,6 +392,7 @@ class Camera:
 
             #color correct the image
             frame = self.colorCorrectImage(frame, initializeRatio=True)
+            self.current_frame = frame
 
             # Our operations on the frame come here
             gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
@@ -465,7 +469,8 @@ class Camera:
 
         return frame[ystart:yend, xstart:xend], xstart, ystart
 
-    def drawBoundingBox(self, frame, boundingbox, color=(0, 255, 0)):
+    @staticmethod
+    def drawBoundingBox(frame, boundingbox, color=(0, 255, 0)):
         for i in range(len(boundingbox)):
             from_pt = boundingbox[i]
             to_pt = boundingbox[0]
@@ -485,6 +490,7 @@ class Camera:
 
         #apply camera correction to frame
         frame = cv.remap(frame, self.remapX, self.remapY, cv.INTER_LINEAR)
+        self.current_frame = frame
         
         time_for_one_pass = -1
     
@@ -589,14 +595,14 @@ class Camera:
             #debug info
 
 
-        for vehicle in self.tracked_vehicles:
+        """for vehicle in self.tracked_vehicles:
             boundingbox = vehicle.getBoundingBox(self.current_time)
             color = (0, 255, 0)
             if vehicle.ttl < 15:
                 color = (0, 0, 255)
             self.drawBoundingBox(frame, boundingbox, color=color)
             cv.putText(frame, f"Speed: {vehicle.getSpeed():.2f} m/s", (int(boundingbox[0][0]), int(boundingbox[0][1])), cv.FONT_HERSHEY_SIMPLEX, 1,
-                        (0,255,0), 2, cv.LINE_AA)
+                        (0,255,0), 2, cv.LINE_AA)"""
 
         #print FPS
         if time_for_one_pass > 0.0:
@@ -609,9 +615,9 @@ class Camera:
 
         #print(f"Procesing time: {(time_end-time_start)*1000}ms")
         # Display the resulting frame
-        cv.imshow('frame', frame)
+        """cv.imshow('frame', frame)
         if cv.waitKey(1) == ord('q'):
-            return
+            return"""
 
         
 
