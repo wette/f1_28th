@@ -61,12 +61,21 @@ distortionCoefficients = np.array([[ 0.02473071, -0.39668063,  0.00151336,  0.00
 
 # this code is running in another process. 
 # Data is transfered from the main thread using the d parameter
-def showImageThread(d: dict):
+def showImageThread(d: dict, track: Track):
     while d["showVisualization"]:
         frame = d["frame"]
         vehicles = d["vehicles"]
 
         if frame is not None:
+            #draw racetrack:
+            for idx in range(len(track.innerBounds)-1):
+                cv.line(frame, track.innerBounds[idx], track.innerBounds[idx+1], (255,255,255), 2)
+            cv.line(frame, track.innerBounds[-1], track.innerBounds[0], (255,255,255), 2)
+
+            for idx in range(len(track.outerBounds)-1):
+                cv.line(frame, track.outerBounds[idx], track.outerBounds[idx+1], (255,255,255), 2)
+            cv.line(frame, track.outerBounds[-1], track.outerBounds[0], (255,255,255), 2)
+
             #draw vehicle bounding boxes:
             for vehicle in vehicles:
                 boundingbox = vehicle.getBoundingBox(time.time()) #TODO: think about which time to use here!
@@ -135,13 +144,13 @@ def main():
     #calibrate track
     print("Do you want to re-set the track boundaries (y/n)?")
     key = input()
-    t = Track()
+    racetrack = Track()
     if key.upper() == "Y":
         
-        t.manuallyPickTrackBorders(cam.get_frame())
-        t.saveToFile("track_borders.npy")
+        racetrack.manuallyPickTrackBorders(cam.get_frame())
+        racetrack.saveToFile("track_borders.npy")
     else:
-        t.loadFromFile("track_borders.npy")
+        racetrack.loadFromFile("track_borders.npy")
 
     #create manager object for multiprocessing
     manager = Manager()
@@ -153,7 +162,7 @@ def main():
 
 
     #spawn one process for visualization:
-    process_visualization = Process(target=showImageThread, args=(d, ))
+    process_visualization = Process(target=showImageThread, args=(d, racetrack))
     process_visualization.start()
 
     #list of processes - one for each vehicle to compute steering commands
