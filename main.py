@@ -1,5 +1,6 @@
 from localization.camera import Camera
 from localization.vehicle import Vehicle
+from control.track import Track
 import numpy as np
 import math
 
@@ -8,6 +9,7 @@ import math
 vehicles = {
         "orange": {
             "ip": "10.134.137.90", 
+            "port": 6446,
             "motor_pid": (30, 0, 0),    #PID parameters to control the motor
             "length_m": 0.18,           #vehicle length
             "width_m":  0.08,           #vehicle width
@@ -17,6 +19,7 @@ vehicles = {
         },
         "green": {
             "ip": "10.134.137.91", 
+            "port": 6446,
             "motor_pid": (30, 0, 0),         #PID parameters to control the motor
             "length_m": 0.18,           #vehicle length
             "width_m":  0.08,           #vehicle width
@@ -27,16 +30,16 @@ vehicles = {
 }
 
 #camera parameters
-vertical_resolution_px = 1200
+vertical_resolution_px = 1080
 horizontal_resolution_px = 1920
 frames_per_seconds = 90
 opening_angle_vertical_degrees = 88.0
 opening_angle_horizontal_degrees = 126.0
 
 #physical parameters of camera and vehicle features
-meters_to_pixels = 644.3806269957947     #how many pixels are in one meter?
+meters_to_pixels = 1075     #how many pixels are in one meter?
 max_speed_vehicle_mps = 4.0        #max speed of a car in meters per second
-minimum_brightness = 2.7   #used to brighten the image of the webcam
+minimum_brightness = 1.0 #2.7   #used to brighten the image of the webcam
 threshold_brightness_of_black = 150       #rgb from 0-255
 threshold_brightness_of_white = 200        #rgb from 0-255
 circle_diameter_meters = 0.02  #diameter of black and white dots (2cm)
@@ -81,12 +84,16 @@ def main():
     print("Do you want to re-set the track boundaries (y/n)?")
     key = input()
     if key.upper() == "Y":
-        pass
+        t = Track()
+        t.manuallyPickTrackBorders(cam.get_frame())
+        t.saveToFile("track_borders.npy")
+
 
 
     while True:
         if cam.detectVehicles() > 0:
             print(f"found {len(cam.tracked_vehicles)} vehicles.")
+
             #setup vehicles
             for v in cam.tracked_vehicles:
                 if v.color in vehicles.keys():
@@ -97,7 +104,7 @@ def main():
                                             vehicles[v.color]["max_steering_angle_deg"], 
                                             vehicles[v.color]["steering_angle_offset_deg"])
                     #setup IP communication
-                    v.initNetworkConnection(ip_adress=vehicles[v.color]["ip"], port=2222)
+                    v.initNetworkConnection(ip_adress=vehicles[v.color]["ip"], port=vehicles[v.color]["port"])
 
                     #setup servo parameters
                     v.servo_offset = vehicles[v.color]["servo_offset"]

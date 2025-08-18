@@ -14,6 +14,8 @@ class Track:
         self.innerRing = None
         self.polygon = None
 
+        self.img = None #used to store image for picking borders manually
+
         self.mode = None
 
     def pointInsideTrack(self, point : Point):
@@ -46,7 +48,7 @@ class Track:
             print(f"Failure generating linear ring: {e}")
 
         try:
-            self.polygon = Polygon(shell=self.outerRing, holes=self.innerRing)
+            self.polygon = Polygon(shell=self.outerRing, holes=[self.innerRing])
         
         except Exception as e:
             print(f"Failure generating polygon: {e}")
@@ -81,14 +83,23 @@ class Track:
                 self.innerBounds.append((x, y))
 
             color = (0, 0, 255) if self.mode == "outer" else (0, 255, 0)
-            cv.circle(self.display, (x, y), 5, color, -1)
+            cv.circle(self.img, (x, y), 5, color, -1)
 
     def manuallyPickTrackBorders(self, img):
+
+        print("Mouse-leftclick to set controlpoints for the track boundaries.\n",
+              "First, select the OUTER outline of the track. Then switch to the inner boundary.\n"
+            "press n to change mode to inner bounding\n",
+            "press b to return to mode outer bounding\n",
+            "press q to finish the process.\n",)
+
         windowName = "Pick Track Borders"
         cv.namedWindow(windowName, cv.WINDOW_NORMAL)
         cv.setMouseCallback(windowName, self.mouseCallback)
 
         self.mode = "outer"
+
+        self.img = img
 
         while True:
             cv.imshow(windowName, img)

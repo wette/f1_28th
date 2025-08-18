@@ -58,7 +58,9 @@ class Vehicle:
         self.ttl = 5
 
     def drivingLoop(self):
-        pass
+        self.controller = DisparityExtender(car_width=self.width_px, disparity_threshold=50, tolerance=20)
+
+
 
     def setPhysicalProperties(self, length_m, width_m, rear_axle_offset_m, max_steering_angle_deg, steering_angle_offset_deg):
         self.length_px = length_m * self.meters_to_pixels
@@ -165,7 +167,7 @@ class Vehicle:
     def initNetworkConnection(self, ip_adress:str, port:int):
         self.port = port
         self.IP = ip_adress
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) #UDP
 
     # send controls via UDP to the vehicle hardware.
     # target_velocity_mps:          target velocity of the vehicle. in meters/second
@@ -176,18 +178,24 @@ class Vehicle:
         #ask PID control what to do with the motor voltage
         delta_motor_value = self.motor_pid.update(target_velocity_mps - self.vehicle_speed)
         self.current_motor_value += delta_motor_value
-        self.current_motor_value = int(max(0, min(2**16, self.current_motor_value))) #clip between 0 and 2^16
+        self.current_motor_value = int(max(0, min(2**8, self.current_motor_value))) #clip between 0 and 2^8
 
         #compute delta steering angle
         target_steering_angle_rad = target_steering_angle_rad - self.yaw
         #check steering angle is in bounds
         target_steering_angle_rad = max(-self.max_steering_angle_rad, min(self.max_steering_angle_rad, target_steering_angle_rad))
-        #convert steering angle to number between 0 and 2^16,
-        steering_angle = int(((target_steering_angle_rad/self.max_steering_angle_rad + 1.0) / 0.5) * 2**16)
+        #convert steering angle to number between 0 and 2^8,
+        steering_angle = int(((target_steering_angle_rad/self.max_steering_angle_rad + 1.0) / 0.5) * 2**8)
 
         #send data over to hardware
-        msg = bytes()
-        msg += struct.pack("!H", self.current_motor_value)    #network-byte-order unsigned 16bit int
-        msg += struct.pack("!H", steering_angle)    #network-byte-order unsigned 16bit int
+        
+        #binary protocol
+        #msg = bytes()
+        #msg += struct.pack("!H", self.current_motor_value)    #network-byte-order unsigned 16bit int
+        #msg += struct.pack("!H", steering_angle)              #network-byte-order unsigned 16bit int
+
+        #somehow the students decided to use an ascii format...
+        output = [0, self.current_motor_value, steering_angle]
+        msg = ";".join(f"{e:03}" for e in output)
         
         self.sock.sendto(msg, (self.IP, self.port))

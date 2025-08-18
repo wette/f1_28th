@@ -35,8 +35,8 @@ class Camera:
                             [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]]),
                  distortionCoefficients = np.array([[ 0.02473071, -0.39668063,  0.00151336,  0.00085757,  0.25759047]])
                  ):
-        #self.cap = cv.VideoCapture(0) #use default camera driver (might not support 90fps)
-        self.cap = cv.VideoCapture(0, cv.CAP_V4L) #use V4L to access the camera
+        self.cap = cv.VideoCapture(0) #use default camera driver (might not support 90fps)
+        #self.cap = cv.VideoCapture(0, cv.CAP_V4L) #use V4L to access the camera
         #self.cap = cv.VideoCapture("/Users/wette/Documents/FHBielefeld/eigeneVorlesungen/AutonomeFahrzeuge1zu32/moving_vehicle.avi")
         
         if not self.cap.isOpened():
@@ -89,6 +89,22 @@ class Camera:
         self.fps_buffer = []
 
         self.__setup_video_stream__()
+
+    def get_frame(self):
+        ret, frame = self.cap.read()
+        
+        # if frame is read correctly ret is True
+        if not ret:
+            print("Can't receive frame (stream end?). Exiting ...")
+            return None
+
+        #apply camera correction to frame
+        frame = cv.remap(frame, self.remapX, self.remapY, cv.INTER_LINEAR)
+
+        #color correct the image
+        frame = self.colorCorrectImage(frame, initializeRatio=True)
+
+        return frame
 
     #configure video stream using V4L
     def __setup_video_stream__(self):
@@ -409,7 +425,7 @@ class Camera:
                             color1 = gray[dot1[1],dot1[0]]
                             color2 = gray[dot2[1],dot2[0]]
 
-                            if abs(color1 -color2) < 30:
+                            if abs(float(color1) -float(color2)) < 30:
                                 #two circles of same color
                                 continue
 
