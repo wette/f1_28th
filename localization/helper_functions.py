@@ -10,13 +10,11 @@ def distance(point1, point2):
 def getyaw(point1, point2):
     a = point2[1] - point1[1]
     b = point2[0] - point1[0]
-
     yaw = -1*math.atan2(b, a)  + math.pi/2.0
-
     return yaw
 
 #rotate vector by angle
 def rotate(x: float, y: float, alpha:float) -> tuple[float, float]:
     xrot = x*math.cos(alpha) - y*math.sin(alpha)
-    yrot = x*math.sin(alpha + y*math.cos(alpha))
+    yrot = x*math.sin(alpha) + y*math.cos(alpha)
     return xrot, yrot
