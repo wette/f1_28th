@@ -35,8 +35,8 @@ class Camera:
                             [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]]),
                  distortionCoefficients = np.array([[ 0.02473071, -0.39668063,  0.00151336,  0.00085757,  0.25759047]])
                  ):
-        self.cap = cv.VideoCapture(0) #use default camera driver (might not support 90fps)
-        #self.cap = cv.VideoCapture(0, cv.CAP_V4L) #use V4L to access the camera
+        #self.cap = cv.VideoCapture(0) #use default camera driver (might not support 90fps)
+        self.cap = cv.VideoCapture(0, cv.CAP_V4L) #use V4L to access the camera
         #self.cap = cv.VideoCapture("/Users/wette/Documents/FHBielefeld/eigeneVorlesungen/AutonomeFahrzeuge1zu32/moving_vehicle.avi")
         
         if not self.cap.isOpened():
@@ -234,7 +234,7 @@ class Camera:
                 meanDist = (dist1+dist2)/2
 
                 #how many pixels are in a meter?
-                real_world_distance_across_meters = 2.5 #measured on racetrack from chessboard corner to chessboard corner
+                real_world_distance_across_meters = 2.36 #measured on racetrack from chessboard corner to chessboard corner
                 self.meters_to_pixels = meanDist / real_world_distance_across_meters
                 print("################")
                 print(f"meters_to_pixels is {self.meters_to_pixels}. Adjust constant in code acordingly!!!!!!!!")
@@ -351,8 +351,8 @@ class Camera:
     def getColorOfVehicle(self, frame, x: int, y: int, yaw: float) -> str:
         #assumption: black circle is surrounded by vehicle color.
         # hence, add a vector of size 1cm to the vehicle position (position of black circle) pointing in yaw direction
-        x_a, y_a = rotate(x=0.01*self.meters_to_pixels + self.circle_diameter_px/2.0, y=0, alpha=yaw)
-        x = int(x+x_a)
+        x_a, y_a = rotate(x=0.01*self.meters_to_pixels + self.circle_diameter_px/2.0, y=0, alpha=-yaw)
+        x = int(x-x_a)
         y = int(y+y_a)
         if 0 < x < frame.shape[1] and 0 < y < frame.shape[0]:
                 color = frame[y,x]

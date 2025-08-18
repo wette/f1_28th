@@ -30,19 +30,19 @@ vehicles = {
 }
 
 #camera parameters
-vertical_resolution_px = 1080
+vertical_resolution_px = 1200
 horizontal_resolution_px = 1920
 frames_per_seconds = 90
 opening_angle_vertical_degrees = 88.0
 opening_angle_horizontal_degrees = 126.0
 
 #physical parameters of camera and vehicle features
-meters_to_pixels = 1075     #how many pixels are in one meter?
+meters_to_pixels = 681     #how many pixels are in one meter?
 max_speed_vehicle_mps = 4.0        #max speed of a car in meters per second
-minimum_brightness = 1.0 #2.7   #used to brighten the image of the webcam
+minimum_brightness = 2.0#1.0 #2.7   #used to brighten the image of the webcam
 threshold_brightness_of_black = 150       #rgb from 0-255
 threshold_brightness_of_white = 200        #rgb from 0-255
-circle_diameter_meters = 0.02  #diameter of black and white dots (2cm)
+circle_diameter_meters = 0.025  #diameter of black and white dots (2cm)
 size_between_black_and_white_center_meters = 0.08  #8cm from center to center
 height_over_ground_black_meters = 0.042    #how high is the black dot on the vehicle measured from the ground
 height_over_ground_white_meters = 0.025    #how high is the white dot on the vehicle measured from the ground
