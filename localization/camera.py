@@ -446,10 +446,10 @@ class Camera:
                             if self.DEBUG: print(f"Distance too far between black and white circle: {distance(dot1, dot2)}")
 
             # Display the resulting frame
-            cv.imshow('frame', frame)
+            #cv.imshow('frame', frame)
             #cv.imshow('frame', gray)
-            if cv.waitKey(1) == ord('q'):
-                break
+            #if cv.waitKey(1) == ord('q'):
+            #    break
 
         return len(self.tracked_vehicles)
 
@@ -484,6 +484,9 @@ class Camera:
     
         # Capture frame-by-frame
         ret, frame = self.cap.read()
+        if ret == False:
+            print("End-of-Stream detected. Stop tracking!")
+            return
         self.current_time = time.time()
 
         if self.DEBUG: print("new frame -----------------------")

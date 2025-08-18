@@ -68,13 +68,11 @@ def showImageThread(d: dict, track: Track):
 
         if frame is not None:
             #draw racetrack:
-            for idx in range(len(track.innerBounds)-1):
+            for idx in range(-1, len(track.innerBounds)-1):
                 cv.line(frame, track.innerBounds[idx], track.innerBounds[idx+1], (255,255,255), 2)
-            cv.line(frame, track.innerBounds[-1], track.innerBounds[0], (255,255,255), 2)
 
-            for idx in range(len(track.outerBounds)-1):
+            for idx in range(-1, len(track.outerBounds)-1):
                 cv.line(frame, track.outerBounds[idx], track.outerBounds[idx+1], (255,255,255), 2)
-            cv.line(frame, track.outerBounds[-1], track.outerBounds[0], (255,255,255), 2)
 
             #draw vehicle bounding boxes:
             for vehicle in vehicles:
