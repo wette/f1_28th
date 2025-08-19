@@ -42,7 +42,7 @@ class Camera:
             print("Cannot open camera")
             exit()
 
-        self.DEBUG = True
+        self.DEBUG = False
 
         #camera stream properties
         self.vertical_resolution_px = vertical_resolution_px
@@ -555,7 +555,7 @@ class Camera:
                             color1 = subimage_gray[dot1[1],dot1[0]]
                             color2 = subimage_gray[dot2[1],dot2[0]]
 
-                            if abs(color1 -color2) < 30:
+                            if abs(int(color1) -int(color2)) < 30:
                                 #two circles of same color
                                 continue
 

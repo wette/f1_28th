@@ -1,6 +1,10 @@
 from localization.camera import Camera
 from localization.vehicle import Vehicle
+from localization.helper_functions import hueToBGR
 from control.track import Track
+from control.disparity_extender import DisparityExtender
+from control.lidarSensor import LidarSensor
+from shapely import LineString
 import numpy as np
 import math
 
@@ -63,8 +67,8 @@ distortionCoefficients = np.array([[ 0.02473071, -0.39668063,  0.00151336,  0.00
 # Data is transfered from the main thread using the d parameter
 def showImageThread(d: dict, track: Track):
     while d["showVisualization"]:
-        frame = d["frame"]
-        vehicles = d["vehicles"]
+        frame      = d["frame"]
+        vehicles   = d["vehicles"]
 
         if frame is not None:
             #draw racetrack:
@@ -84,6 +88,19 @@ def showImageThread(d: dict, track: Track):
                 cv.putText(frame, f"Speed: {vehicle.getSpeed():.2f} m/s", (int(boundingbox[0][0]), int(boundingbox[0][1])), cv.FONT_HERSHEY_SIMPLEX, 0.5,
                             (0,255,0), 1, cv.LINE_AA)
                 
+            #draw lidar rays:
+            for color in Camera.ColorMap.keys():
+                if "lidar_rays_"+color in d and d["lidar_rays_"+color] is not None:
+                    rays : list[LineString] = d["lidar_rays_"+color] #rays:      the rays sent out by the lidar -> list of shapely.LineString objects
+                    for ray in rays:
+                        xy = ray.coords.xy
+                        cv.line(frame, [int(xy[0][0]), int(xy[1][0])], [int(xy[0][1]), int(xy[1][1])], hueToBGR(Camera.ColorMap[color]), 1)
+
+                
+
+
+
+                
             cv.imshow('frame', frame)
             if cv.waitKey(1) == ord('q'):
                 break
@@ -91,23 +108,32 @@ def showImageThread(d: dict, track: Track):
 # this code is running in another process. 
 # Data is transfered from the main thread using the d parameter
 def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
+    print(f"Starting controlVehicleThread for the {vehicleColor} vehicle.")
     while d["raceEnabled"]:
-        if vehicleColor not in d["vehicles"]:
-            print(f"Stopping controlVehicleThread for the {vehicleColor} vehicle as it is no longer found on the racetrack.")
-            return
-        v = d["vehicles"][vehicleColor]
 
-        x, y, yaw = v.getPositionEstimate(0.0)  #TODO: insert delay between frame capture and vehicle action here!
+        #look for the vehicle with our color:
+        v = None
+        for x in d["vehicles"]:
+            if x.color == vehicleColor:
+                v = x
+                break
+        
+        if v is None:
+            print(f"Stopping controlVehicleThread for the {vehicleColor} vehicle as it is no longer found on the racetrack.")
+            d["lidar_rays_" + vehicleColor] = None
+            d["setpoints_" + vehicleColor]  = None
+            return
+
         #compute vehicle actions
-        target_velocity_mps, target_steering_angle_deg = v.controller.compute_next_command(x, 
-                                                                                    y, 
-                                                                                    yaw, 
-                                                                                    v.vehicle_speed,
-                                                                                    delta_t=delta_t)
+        target_velocity_mps, target_steering_angle_rad, rays, setpoint = v.compute_next_command(delta_t=delta_t)
+
+        #forward lidar information to visualization process through the dict.
+        d["lidar_rays_" + vehicleColor]  = rays
+        d["setpoints_" +  vehicleColor]  = setpoint
 
         #send actions to vehicle
-        v.sendControlsToHardware(target_velocity_mps=target_velocity_mps,
-                                    target_steering_angle_rad=math.radians(target_steering_angle_deg))
+        #v.sendControlsToHardware(target_velocity_mps=target_velocity_mps,
+        #                         target_steering_angle_rad=target_steering_angle_rad)
         
         time.sleep(1.0/90.0) #execute with 90 Hz-ish TODO: make real 90Hz!
 
@@ -156,7 +182,7 @@ def main():
     d["frame"] = None
     d["vehicles"] = []
     d["showVisualization"] = True
-    d["raceEnabled"] = False #True
+    d["raceEnabled"] = True
 
 
     #spawn one process for visualization:
@@ -189,7 +215,15 @@ def main():
                                    error_history_length=50)
                     
                     #setup controller
-                    v.controller = None
+                    v.controller = DisparityExtender(car_width=vehicles[v.color]["width_m"]*meters_to_pixels, 
+                                                     disparity_threshold=50, 
+                                                     tolerance=20)
+                    
+                    #setup lidar
+                    v.lidar = LidarSensor(track=racetrack, 
+                                          field_of_view_deg=60, 
+                                          numRays=20, 
+                                          rayLength_px=1.00 * meters_to_pixels)
 
                     #create process for controlling:
                     control_processes[v.color] = Process(target=controlVehicleThread, args=(d, v.color, 1.0/frames_per_seconds))

@@ -34,6 +34,9 @@ class Vehicle:
         #reference to contoroller
         self.controller = None
 
+        #reference to lidar sensor
+        self.lidar = None
+
         #color of the vehicle
         self.color = None
 
@@ -57,8 +60,24 @@ class Vehicle:
 
         self.ttl = 5
 
-    def drivingLoop(self):
-        self.controller = DisparityExtender(car_width=self.width_px, disparity_threshold=50, tolerance=20)
+    def compute_next_command(self, delta_t : float):
+        x, y, yaw = self.getPositionEstimate(self.last_update + delta_t) #TODO: find out which delta is required here!
+        distances, rays = self.lidar.getReadings(x, y, yaw)
+
+        
+        disparities_indexes, directions = self.controller.find_disparities(distances)
+        """modified_distances, setpoint, steering_angle = self.controller.extend_disparities(distances, 
+                                                                                          rays, 
+                                                                                          disparities_indexes, 
+                                                                                          directions)"""
+        steering_angle = None
+        setpoint = None
+        
+        #compute target velocity
+        target_steering_angle_rad = steering_angle
+        target_velocity_mps = 1.0 #TODO: make velocity dependent from the steering angle
+
+        return target_velocity_mps, target_steering_angle_rad, rays, setpoint
 
 
 
