@@ -35,8 +35,8 @@ class Camera:
                  distortionCoefficients = np.array([[ 0.02473071, -0.39668063,  0.00151336,  0.00085757,  0.25759047]])
                  ):
         #self.cap = cv.VideoCapture(0) #use default camera driver (might not support 90fps)
-        self.cap = cv.VideoCapture(0, cv.CAP_V4L) #use V4L to access the camera
-        #self.cap = cv.VideoCapture("/Users/wette/Documents/FHBielefeld/eigeneVorlesungen/AutonomeFahrzeuge1zu32/moving_vehicle.avi")
+        #self.cap = cv.VideoCapture(0, cv.CAP_V4L) #use V4L to access the camera
+        self.cap = cv.VideoCapture("/Users/wette/Documents/FHBielefeld/eigeneVorlesungen/AutonomeFahrzeuge1zu32/moving_vehicle.avi")
         
         if not self.cap.isOpened():
             print("Cannot open camera")

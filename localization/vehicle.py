@@ -29,7 +29,7 @@ class Vehicle:
 
         #PID for speed control
         self.motor_pid = None
-        self.current_motor_value = 0    #control signal to the hardware
+        self.target_velocity_mps = 0
 
         #reference to contoroller
         self.controller = None
@@ -66,16 +66,26 @@ class Vehicle:
 
         
         disparities_indexes, directions = self.controller.find_disparities(distances)
-        """modified_distances, setpoint, steering_angle = self.controller.extend_disparities(distances, 
+        modified_distances, setpoint, steering_angle = self.controller.extend_disparities(distances, 
                                                                                           rays, 
                                                                                           disparities_indexes, 
-                                                                                          directions)"""
-        steering_angle = None
-        setpoint = None
+                                                                                          directions)
         
         #compute target velocity
         target_steering_angle_rad = steering_angle
-        target_velocity_mps = 1.0 #TODO: make velocity dependent from the steering angle
+        target_velocity_mps = 0.2
+        #find out how fast we can go: TODO: find out more reasonable numbers.
+        target_steering_angle_deg = abs(math.degrees(target_steering_angle_rad - self.yaw))
+        if 0 <= target_steering_angle_deg < 10:
+            target_velocity_mps = 3.0
+        if 10 <= target_steering_angle_deg < 20:
+            target_velocity_mps = 2.0
+        if 20 <= target_steering_angle_deg < 30:
+            target_velocity_mps = 1.0
+        if 30 <= target_steering_angle_deg:
+            target_velocity_mps = 0.5
+
+        self.target_velocity_mps = target_velocity_mps
 
         return target_velocity_mps, target_steering_angle_rad, rays, setpoint
 
@@ -192,12 +202,16 @@ class Vehicle:
     # target_velocity_mps:          target velocity of the vehicle. in meters/second
     # target_steering_angle_rad:    target steering angle of the vehicle. in map coordiates.
     #                               positive is to the right
-    def sendControlsToHardware(self, target_velocity_mps:float, target_steering_angle_rad:float):
+    # current_motor_value:          the (voltage) value last set for the vehicle
+    #
+    # returns:
+    # current_motor_value:          the value just set for the motor
+    def sendControlsToHardware(self, target_velocity_mps:float, target_steering_angle_rad:float, current_motor_value:int):
 
         #ask PID control what to do with the motor voltage
         delta_motor_value = self.motor_pid.update(target_velocity_mps - self.vehicle_speed)
-        self.current_motor_value += delta_motor_value
-        self.current_motor_value = int(max(0, min(2**8, self.current_motor_value))) #clip between 0 and 2^8
+        current_motor_value += delta_motor_value
+        current_motor_value = int(max(0, min(2**8, current_motor_value))) #clip between 0 and 2^8
 
         #compute delta steering angle
         target_steering_angle_rad = target_steering_angle_rad - self.yaw
@@ -206,6 +220,8 @@ class Vehicle:
         #convert steering angle to number between 0 and 2^8,
         steering_angle = int(((target_steering_angle_rad/self.max_steering_angle_rad + 1.0) / 0.5) * 2**8)
 
+        #TODO: think about filtering the steering angle to make it more smooth --> PID?
+
         #send data over to hardware
         
         #binary protocol
@@ -213,8 +229,10 @@ class Vehicle:
         #msg += struct.pack("!H", self.current_motor_value)    #network-byte-order unsigned 16bit int
         #msg += struct.pack("!H", steering_angle)              #network-byte-order unsigned 16bit int
 
-        #somehow the students decided to use an ascii format...
-        output = [0, self.current_motor_value, steering_angle]
+        #somehow the students decided to use an utf-8 format?!... TODO: find out what the first value (called "status" in their implementation) actually means and convert to binary format.
+        output = [0, current_motor_value, steering_angle]
         msg = ";".join(f"{e:03}" for e in output)
         
-        self.sock.sendto(msg, (self.IP, self.port))
+        self.sock.sendto(bytes(msg, "utf-8"), (self.IP, self.port))
+
+        return current_motor_value

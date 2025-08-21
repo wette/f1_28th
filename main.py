@@ -12,6 +12,7 @@ from multiprocessing import Process, Manager
 import cv2 as cv
 import time
 import copy
+import collections
 
 
 #ip addresses of vehicles
@@ -19,12 +20,15 @@ vehicles = {
         "orange": {
             "ip": "10.134.137.90", 
             "port": 6446,
-            "motor_pid": (30, 0, 0),    #PID parameters to control the motor
+            "motor_pid": (10, 0, 0.01),    #PID parameters to control the motor
             "length_m": 0.18,           #vehicle length
             "width_m":  0.08,           #vehicle width
             "rear_axle_offset_m" : 0.065, #rear-center offset of the center of rear axle (where the black Dot on the vehicle is)
             "max_steering_angle_deg": 45,
-            "steering_angle_offset_deg": 0.0
+            "steering_angle_offset_deg": 0.0,
+            "lidar_field_of_view_deg": 60, 
+            "lidar_numRays": 40, 
+            "lidar_rayLength_m" : 1.0
         },
         "green": {
             "ip": "10.134.137.91", 
@@ -34,7 +38,10 @@ vehicles = {
             "width_m":  0.08,           #vehicle width
             "rear_axle_offset_m" : 0.065, #rear-center offset of the center of rear axle (where the black Dot on the vehicle is)
             "max_steering_angle_deg": 45,
-            "steering_angle_offset_deg": 0.0
+            "steering_angle_offset_deg": 0.0,
+            "lidar_field_of_view_deg": 60, 
+            "lidar_numRays": 40, 
+            "lidar_rayLength_m" : 1.0
         },
 }
 
@@ -66,9 +73,18 @@ distortionCoefficients = np.array([[ 0.02473071, -0.39668063,  0.00151336,  0.00
 # this code is running in another process. 
 # Data is transfered from the main thread using the d parameter
 def showImageThread(d: dict, track: Track):
+
+    history_plot_motor_values = dict()
+    history_plot_delta_speed  = dict()
+
+    for color in Camera.ColorMap.keys():
+        history_plot_motor_values[color] = collections.deque(maxlen=100)
+        history_plot_delta_speed[color] = collections.deque(maxlen=100)
+
+
     while d["showVisualization"]:
-        frame      = d["frame"]
-        vehicles   = d["vehicles"]
+        frame                    = d["frame"]
+        vehicles :list[Vehicle]  = d["vehicles"]
 
         if frame is not None:
             #draw racetrack:
@@ -88,15 +104,53 @@ def showImageThread(d: dict, track: Track):
                 cv.putText(frame, f"Speed: {vehicle.getSpeed():.2f} m/s", (int(boundingbox[0][0]), int(boundingbox[0][1])), cv.FONT_HERSHEY_SIMPLEX, 0.5,
                             (0,255,0), 1, cv.LINE_AA)
                 
-            #draw lidar rays:
+            #draw lidar rays and setpoint:
             for color in Camera.ColorMap.keys():
-                if "lidar_rays_"+color in d and d["lidar_rays_"+color] is not None:
+                if "lidar_rays_"+color in d:
                     rays : list[LineString] = d["lidar_rays_"+color] #rays:      the rays sent out by the lidar -> list of shapely.LineString objects
-                    for ray in rays:
-                        xy = ray.coords.xy
-                        cv.line(frame, [int(xy[0][0]), int(xy[1][0])], [int(xy[0][1]), int(xy[1][1])], hueToBGR(Camera.ColorMap[color]), 1)
+                    if rays is not None:
+                        for ray in rays:
+                            xy = ray.coords.xy
+                            cv.line(frame, [int(xy[0][0]), int(xy[1][0])], [int(xy[0][1]), int(xy[1][1])], hueToBGR(Camera.ColorMap[color]), 1)
 
                 
+                if "setpoints_"+color in d:
+                    sp = d["setpoints_"+color]
+                    if sp is not None:    
+                        c = [int(sp[0]), int(sp[1])]
+                        cv.circle(frame, c, radius=5, color=hueToBGR(Camera.ColorMap[color]), thickness=5, lineType=1)
+                
+
+            #plot target speed over demanded motor voltage
+            i = -1
+            for color in Camera.ColorMap.keys():
+                if "target_velocity_delta_mps_"+color in d and "motor_voltage_"+color in d:
+                    i += 1
+
+                    dx = 3  #space between two readings in x
+                    dy = 100    #height of y axis.
+                    plot_x, plot_y = 20, 400 +i*dy+20
+                    
+                    delta_speed_m = d["target_velocity_delta_mps_" +  color]
+                    motor_value = d["motor_voltage_" +  color]
+                    history_plot_motor_values[vehicle.color].append((motor_value / 255)*dy)
+                    history_plot_delta_speed[vehicle.color].append((delta_speed_m/3)   *dy)
+
+                    bgr = hueToBGR(Camera.ColorMap[color])
+
+                    cv.putText(frame, f"Velocity delta and applied motor voltage", (plot_x, plot_y-dy-10), cv.FONT_HERSHEY_SIMPLEX, 0.5,
+                            bgr, 1, cv.LINE_AA)
+
+                    
+                    #draw x and y axis:
+                    numMaxValues = len(history_plot_motor_values[vehicle.color])
+                    cv.line(frame, [plot_x, plot_y], [plot_x+dx*numMaxValues, plot_y], (255,255,255), 1) #x-axis
+                    cv.line(frame, [plot_x, plot_y], [plot_x, plot_y-dy], (255,255,255), 1) #y-axis
+
+                    for i in range(0, len(history_plot_motor_values[vehicle.color])-1):
+                        cv.line(frame, [plot_x + i*dx, plot_y - int(history_plot_motor_values[vehicle.color][i])], [plot_x + (i+1)*dx, plot_y - int(history_plot_motor_values[vehicle.color][i+1])], (0,0,0), 1)
+                        cv.line(frame, [plot_x + i*dx, plot_y - int(history_plot_delta_speed[vehicle.color][i])], [plot_x + (i+1)*dx, plot_y  - int(history_plot_delta_speed[vehicle.color][i+1])], bgr, 1)
+
 
 
 
@@ -109,10 +163,11 @@ def showImageThread(d: dict, track: Track):
 # Data is transfered from the main thread using the d parameter
 def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
     print(f"Starting controlVehicleThread for the {vehicleColor} vehicle.")
+    current_motor_value = 0
     while d["raceEnabled"]:
 
         #look for the vehicle with our color:
-        v = None
+        v : Vehicle = None
         for x in d["vehicles"]:
             if x.color == vehicleColor:
                 v = x
@@ -127,13 +182,18 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
         #compute vehicle actions
         target_velocity_mps, target_steering_angle_rad, rays, setpoint = v.compute_next_command(delta_t=delta_t)
 
-        #forward lidar information to visualization process through the dict.
-        d["lidar_rays_" + vehicleColor]  = rays
-        d["setpoints_" +  vehicleColor]  = setpoint
 
         #send actions to vehicle
-        #v.sendControlsToHardware(target_velocity_mps=target_velocity_mps,
-        #                         target_steering_angle_rad=target_steering_angle_rad)
+        current_motor_value = v.sendControlsToHardware(target_velocity_mps=target_velocity_mps,
+                                                       target_steering_angle_rad=target_steering_angle_rad,
+                                                       current_motor_value=current_motor_value)
+
+        
+        #forward lidar information to visualization process through the dict.
+        d["lidar_rays_" + vehicleColor]  = rays
+        d["setpoints_" +  vehicleColor]  = setpoint        
+        d["target_velocity_delta_mps_" +  vehicleColor]  = target_velocity_mps - v.getSpeed()
+        d["motor_voltage_" +  vehicleColor]  = current_motor_value
         
         time.sleep(1.0/90.0) #execute with 90 Hz-ish TODO: make real 90Hz!
 
@@ -221,9 +281,9 @@ def main():
                     
                     #setup lidar
                     v.lidar = LidarSensor(track=racetrack, 
-                                          field_of_view_deg=60, 
-                                          numRays=20, 
-                                          rayLength_px=1.00 * meters_to_pixels)
+                                          field_of_view_deg=vehicles[v.color]["lidar_field_of_view_deg"], 
+                                          numRays=vehicles[v.color]["lidar_numRays"], 
+                                          rayLength_px=vehicles[v.color]["lidar_rayLength_m"] * meters_to_pixels)
 
                     #create process for controlling:
                     control_processes[v.color] = Process(target=controlVehicleThread, args=(d, v.color, 1.0/frames_per_seconds))
