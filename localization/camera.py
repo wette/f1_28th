@@ -613,7 +613,8 @@ class Camera:
             self.fps_buffer.append(fps)
             self.fps_buffer = self.fps_buffer[-self.frames_per_seconds:len(self.fps_buffer)] #keep last second
 
-        cv.putText(frame, f"FPS: {sum(self.fps_buffer)/len(self.fps_buffer)}", (50, 50), cv.FONT_HERSHEY_SIMPLEX, 1,
+        if len(self.fps_buffer) > 0:
+            cv.putText(frame, f"FPS: {sum(self.fps_buffer)/len(self.fps_buffer)}", (50, 50), cv.FONT_HERSHEY_SIMPLEX, 1,
                         (0,255,0), 2, cv.LINE_AA)
 
         #print(f"Procesing time: {(time_end-time_start)*1000}ms")
