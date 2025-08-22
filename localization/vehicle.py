@@ -217,10 +217,12 @@ class Vehicle:
         target_steering_angle_rad = target_steering_angle_rad - self.yaw
         #check steering angle is in bounds
         target_steering_angle_rad = max(-self.max_steering_angle_rad, min(self.max_steering_angle_rad, target_steering_angle_rad))
-        #convert steering angle to number between 0 and 2^8,
-        steering_angle = int(((target_steering_angle_rad/self.max_steering_angle_rad + 1.0) / 0.5) * 2**8)
 
-        #TODO: think about filtering the steering angle to make it more smooth --> PID?
+        #TODO: think about filtering the steering angle to make it more smooth --> another PID controller for steering?
+        target_steering_angle_rad *= 0.7 # poor man's P controller ;)
+
+        #convert steering angle to number between 0 and 2^8,
+        steering_angle = int(((target_steering_angle_rad/self.max_steering_angle_rad + 1.0) / 0.5) * 2**8) #TODO: this is most likely NOT what the vehicle expects!
 
         #send data over to hardware
         
