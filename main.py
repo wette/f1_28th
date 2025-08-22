@@ -1,6 +1,7 @@
 from localization.camera import Camera
 from localization.vehicle import Vehicle
 from localization.helper_functions import hueToBGR
+from localization.pid_controller import PIDController
 from control.track import Track
 from control.disparity_extender import DisparityExtender
 from control.lidarSensor import LidarSensor
@@ -141,12 +142,25 @@ def showImageThread(d: dict, track: Track):
                     cv.putText(frame, f"Velocity delta and applied motor voltage", (plot_x, plot_y-dy-10), cv.FONT_HERSHEY_SIMPLEX, 0.5,
                             bgr, 1, cv.LINE_AA)
 
-                    
-                    #draw x and y axis:
                     numMaxValues = len(history_plot_motor_values[vehicle.color])
+
+                    #draw background(semi transparent):
+                    # First we crop the sub-rect from the image
+                    x, y, w, h = plot_x, plot_y-dy, plot_x+dx*numMaxValues, dy
+                    sub_img = frame[y:y+h, x:x+w]
+                    white_rect = np.ones(sub_img.shape, dtype=np.uint8) * 255
+
+                    res = cv.addWeighted(sub_img, 0.3, white_rect, 0.7, 1.0)
+
+                    # Putting the image back to its position
+                    frame[y:y+h, x:x+w] = res
+
+
+                    #draw x and y axis:
                     cv.line(frame, [plot_x, plot_y], [plot_x+dx*numMaxValues, plot_y], (255,255,255), 1) #x-axis
                     cv.line(frame, [plot_x, plot_y], [plot_x, plot_y-dy], (255,255,255), 1) #y-axis
 
+                    #plot actual data
                     for i in range(0, len(history_plot_motor_values[vehicle.color])-1):
                         cv.line(frame, [plot_x + i*dx, plot_y - int(history_plot_motor_values[vehicle.color][i])], [plot_x + (i+1)*dx, plot_y - int(history_plot_motor_values[vehicle.color][i+1])], (0,0,0), 1)
                         cv.line(frame, [plot_x + i*dx, plot_y - int(history_plot_delta_speed[vehicle.color][i])], [plot_x + (i+1)*dx, plot_y  - int(history_plot_delta_speed[vehicle.color][i+1])], bgr, 1)
@@ -163,8 +177,12 @@ def showImageThread(d: dict, track: Track):
 # Data is transfered from the main thread using the d parameter
 def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
     print(f"Starting controlVehicleThread for the {vehicleColor} vehicle.")
+    target_fps = 90
+    loop_time_s = 1.0 / target_fps
     current_motor_value = 0
+    pid_control_motor : PIDController = None  #we need to store the motor pid in the process as our copy of the vehicle it not synchronized back to the other processes.
     while d["raceEnabled"]:
+        start_time = time.time()
 
         #look for the vehicle with our color:
         v : Vehicle = None
@@ -178,6 +196,11 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
             d["lidar_rays_" + vehicleColor] = None
             d["setpoints_" + vehicleColor]  = None
             return
+        
+        if pid_control_motor is None:
+            pid_control_motor = v.motor_pid
+        else:
+            v.motor_pid = pid_control_motor #put in our local copy of the pid controller.
 
         #compute vehicle actions
         target_velocity_mps, target_steering_angle_rad, rays, setpoint = v.compute_next_command(delta_t=delta_t)
@@ -194,8 +217,14 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
         d["setpoints_" +  vehicleColor]  = setpoint        
         d["target_velocity_delta_mps_" +  vehicleColor]  = target_velocity_mps - v.getSpeed()
         d["motor_voltage_" +  vehicleColor]  = current_motor_value
-        
-        time.sleep(1.0/90.0) #execute with 90 Hz-ish TODO: make real 90Hz!
+
+
+        end_time = time.time()
+        dt = end_time - start_time
+        sleep_time = loop_time_s - dt
+
+        if sleep_time > 0:
+            time.sleep(sleep_time)
 
 
 
@@ -236,7 +265,8 @@ def main():
     else:
         racetrack.loadFromFile("track_borders.npy")
 
-    #create manager object for multiprocessing
+    # create manager object for multiprocessing - used for inter-process communication
+    # all processes can reead and write to this dict.
     manager = Manager()
     d = manager.dict()
     d["frame"] = None
