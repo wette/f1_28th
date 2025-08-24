@@ -1,6 +1,6 @@
 from localization.camera import Camera
 from localization.vehicle import Vehicle
-from localization.helper_functions import hueToBGR
+from localization.helper_functions import hueToBGR, createPlot
 from localization.pid_controller import PIDController
 from control.track import Track
 from control.disparity_extender import DisparityExtender
@@ -21,7 +21,7 @@ vehicles = {
         "orange": {
             "ip": "10.134.137.90", 
             "port": 6446,
-            "motor_pid": (10, 0, 0.01),    #PID parameters to control the motor
+            "motor_pid": (20, 0, 0.01),    #PID parameters to control the motor
             "length_m": 0.18,           #vehicle length
             "width_m":  0.08,           #vehicle width
             "rear_axle_offset_m" : 0.065, #rear-center offset of the center of rear axle (where the black Dot on the vehicle is)
@@ -77,17 +77,35 @@ def showImageThread(d: dict, track: Track):
 
     history_plot_motor_values = dict()
     history_plot_delta_speed  = dict()
+    history_plot_lateral_speed = dict()
+    history_plot_lateral_acceleration = dict()
 
     for color in Camera.ColorMap.keys():
         history_plot_motor_values[color] = collections.deque(maxlen=100)
         history_plot_delta_speed[color] = collections.deque(maxlen=100)
-
+        history_plot_lateral_speed[color] = collections.deque(maxlen=100)
+        history_plot_lateral_acceleration[color] = collections.deque(maxlen=100)
 
     while d["showVisualization"]:
         frame                    = d["frame"]
         vehicles :list[Vehicle]  = d["vehicles"]
 
         if frame is not None:
+            #draw control loop frequency:
+            i = 1
+            for vehicle in vehicles:
+                if "control_loop_frequency_" + vehicle.color in d.keys():
+                    cv.putText(frame, f"Control frequency: {d["control_loop_frequency_" + vehicle.color]:.1f} Hz", (50, 50+i*20), cv.FONT_HERSHEY_SIMPLEX, 0.7,
+                        hueToBGR(Camera.ColorMap[vehicle.color]), 1, cv.LINE_AA)
+                    i += 1
+            
+            #draw laptimes:
+            i = 0
+            for v in vehicles:
+                cv.putText(frame, f"Lap time: {(time.time()-v.time_start_of_lap):.2f}s ({v.last_laptime:.2f}s)", (850, 50+i*20), cv.FONT_HERSHEY_SIMPLEX, 1,
+                        hueToBGR(Camera.ColorMap[vehicle.color]), 2, cv.LINE_AA)
+                i += 1
+
             #draw racetrack:
             for idx in range(-1, len(track.innerBounds)-1):
                 cv.line(frame, track.innerBounds[idx], track.innerBounds[idx+1], (255,255,255), 2)
@@ -127,8 +145,6 @@ def showImageThread(d: dict, track: Track):
             for color in Camera.ColorMap.keys():
                 if "target_velocity_delta_mps_"+color in d and "motor_voltage_"+color in d:
                     i += 1
-
-                    dx = 3  #space between two readings in x
                     dy = 100    #height of y axis.
                     plot_x, plot_y = 20, 400 +i*dy+20
                     
@@ -139,36 +155,32 @@ def showImageThread(d: dict, track: Track):
 
                     bgr = hueToBGR(Camera.ColorMap[color])
 
-                    cv.putText(frame, f"Velocity delta and applied motor voltage", (plot_x, plot_y-dy-10), cv.FONT_HERSHEY_SIMPLEX, 0.5,
-                            bgr, 1, cv.LINE_AA)
+                    createPlot(frame, 
+                               plot_x, 
+                               plot_y, 
+                               plot_height=dy, 
+                               title="Velocity delta and applied motor voltage",
+                               colors=[bgr, [0,0,0]],
+                               values=[list(history_plot_motor_values[vehicle.color]), list(history_plot_delta_speed[vehicle.color])])
 
-                    numMaxValues = len(history_plot_motor_values[vehicle.color])
+            #plot vehicle speed and accelerations:
+            i = -1
+            for vehicle in vehicles:
+                i += 1
+                dy = 100    #height of y axis.
+                history_plot_lateral_acceleration[vehicle.color].append(abs(vehicle.lateral_acceleration_mps * dy))
+                history_plot_lateral_speed[vehicle.color].append(vehicle.lateral_speed_mps*5 * dy)
 
-                    #draw background(semi transparent):
-                    # First we crop the sub-rect from the image
-                    x, y, w, h = plot_x, plot_y-dy, plot_x+dx*numMaxValues, dy
-                    sub_img = frame[y:y+h, x:x+w]
-                    white_rect = np.ones(sub_img.shape, dtype=np.uint8) * 255
+                bgr = hueToBGR(Camera.ColorMap[vehicle.color])
+                createPlot(frame, 
+                            1600, 
+                            200 + i*dy+20, 
+                            plot_height=dy, 
+                            title="Lateral speed",
+                            colors=[bgr],
+                            values=[list(history_plot_lateral_speed[vehicle.color])],
+                            moving_average=10)
 
-                    res = cv.addWeighted(sub_img, 0.3, white_rect, 0.7, 1.0)
-
-                    # Putting the image back to its position
-                    frame[y:y+h, x:x+w] = res
-
-
-                    #draw x and y axis:
-                    cv.line(frame, [plot_x, plot_y], [plot_x+dx*numMaxValues, plot_y], (255,255,255), 1) #x-axis
-                    cv.line(frame, [plot_x, plot_y], [plot_x, plot_y-dy], (255,255,255), 1) #y-axis
-
-                    #plot actual data
-                    for i in range(0, len(history_plot_motor_values[vehicle.color])-1):
-                        cv.line(frame, [plot_x + i*dx, plot_y - int(history_plot_motor_values[vehicle.color][i])], [plot_x + (i+1)*dx, plot_y - int(history_plot_motor_values[vehicle.color][i+1])], (0,0,0), 1)
-                        cv.line(frame, [plot_x + i*dx, plot_y - int(history_plot_delta_speed[vehicle.color][i])], [plot_x + (i+1)*dx, plot_y  - int(history_plot_delta_speed[vehicle.color][i+1])], bgr, 1)
-
-
-
-
-                
             cv.imshow('frame', frame)
             if cv.waitKey(1) == ord('q'):
                 break
@@ -226,6 +238,8 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
         if sleep_time > 0:
             time.sleep(sleep_time)
 
+        d["control_loop_frequency_" +  vehicleColor] = 1.0/dt
+
 
 
 def main():
@@ -265,6 +279,7 @@ def main():
     else:
         racetrack.loadFromFile("track_borders.npy")
 
+
     # create manager object for multiprocessing - used for inter-process communication
     # all processes can reead and write to this dict.
     manager = Manager()
@@ -274,6 +289,10 @@ def main():
     d["showVisualization"] = True
     d["raceEnabled"] = True
 
+    print("Do you want to save the raw video to file?")
+    if input().upper() == "Y":
+        d["saveVideoToFile"] = True
+
 
     #spawn one process for visualization:
     process_visualization = Process(target=showImageThread, args=(d, racetrack))
@@ -282,7 +301,7 @@ def main():
     #list of processes - one for each vehicle to compute steering commands
     control_processes = {}
 
-    while True:
+    while cam.is_video_stream_active():
         if cam.detectVehicles() > 0:
             print(f"found {len(cam.tracked_vehicles)} vehicles.")
 
@@ -326,6 +345,8 @@ def main():
             while len(cam.tracked_vehicles) > 0:
                 #update position of each vehicle
                 cam.trackVehicles()
+
+                cam.checkFinishLine(top_left=(1000, 950), bottom_right=(1050, 1100))
 
                 #send frame and currently tracked vehicles to other processes
                 d["frame"] = cam.get_last_frame()

@@ -1,4 +1,6 @@
 import math
+import cv2 as cv
+import numpy as np
 
 def distance(point1, point2):
     dx = point1[0] - point2[0]
@@ -33,3 +35,48 @@ def hueToBGR(h: float):
     b = 1 - max(min(kb, 4-kb, 1), 0)
 
     return b*255, g*255, r*255
+
+def createPlot(frame, 
+               plot_x:int, 
+               plot_y:int, 
+               plot_height:int, 
+               title:str, 
+               colors : list[list[int]], 
+               values : list[list[float]], 
+               dx=3,
+               moving_average=1):
+    dy = plot_height
+
+    cv.putText(frame, title, (plot_x, plot_y-dy-10), cv.FONT_HERSHEY_SIMPLEX, 0.5,
+            colors[0], 1, cv.LINE_AA)
+
+    numMaxValues = len(values[0])
+
+    #draw background(semi transparent):
+    # First we crop the sub-rect from the image
+    x, y, w, h = plot_x, plot_y-dy, dx*numMaxValues, dy
+    sub_img = frame[y:y+h, x:x+w]
+    white_rect = np.ones(sub_img.shape, dtype=np.uint8) * 255
+
+    res = cv.addWeighted(sub_img, 0.3, white_rect, 0.7, 1.0)
+
+    # Putting the image back to its position
+    frame[y:y+h, x:x+w] = res
+
+
+    #draw x and y axis:
+    cv.line(frame, [plot_x, plot_y], [plot_x+dx*numMaxValues, plot_y], (255,255,255), 1) #x-axis
+    cv.line(frame, [plot_x, plot_y], [plot_x, plot_y-dy], (255,255,255), 1) #y-axis
+
+    #plot actual data
+    for j in range(0, len(values)):
+        for i in range(0, len(values[0])-1-moving_average):
+            last_val = int(sum(values[j][i : i+moving_average])/moving_average)
+            act_val = int(sum(values[j][i+1 : i+1+moving_average])/moving_average)
+            cv.line(frame, 
+                    [plot_x + i*dx, plot_y - last_val], 
+                    [plot_x + (i+1)*dx, plot_y - act_val], 
+                    colors[j], 
+                    1)
+
+    return frame

@@ -89,6 +89,11 @@ class Camera:
         self.fps_buffer = []
 
         self.__setup_video_stream__()
+
+        self.video_stream_active = True
+
+    def is_video_stream_active(self):
+        return self.video_stream_active
     
     def get_last_frame(self):
         return self.current_frame
@@ -99,6 +104,7 @@ class Camera:
         # if frame is read correctly ret is True
         if not ret:
             print("Can't receive frame (stream end?). Exiting ...")
+            self.video_stream_active = False
             return None
 
         #apply camera correction to frame
@@ -138,6 +144,7 @@ class Camera:
             # if frame is read correctly ret is True
             if not ret:
                 print("Can't receive frame (stream end?). Exiting ...")
+                self.video_stream_active = False
                 break
 
             #apply camera correction to frame
@@ -388,6 +395,7 @@ class Camera:
             # if frame is read correctly ret is True
             if not ret:
                 print("Can't receive frame (stream end?). Exiting ...")
+                self.video_stream_active = False
                 break
 
             #color correct the image
@@ -486,6 +494,7 @@ class Camera:
         ret, frame = self.cap.read()
         if ret == False:
             print("End-of-Stream detected. Stop tracking!")
+            self.video_stream_active = False
             return
         self.current_time = time.time()
 
@@ -614,8 +623,8 @@ class Camera:
             self.fps_buffer = self.fps_buffer[-self.frames_per_seconds:len(self.fps_buffer)] #keep last second
 
         if len(self.fps_buffer) > 0:
-            cv.putText(frame, f"FPS: {sum(self.fps_buffer)/len(self.fps_buffer)}", (50, 50), cv.FONT_HERSHEY_SIMPLEX, 1,
-                        (0,255,0), 2, cv.LINE_AA)
+            cv.putText(frame, f"Localization frequency: {sum(self.fps_buffer)/len(self.fps_buffer):.1f} Hz", (50, 50), cv.FONT_HERSHEY_SIMPLEX, 0.7,
+                        (0,255,0), 1, cv.LINE_AA)
 
         #print(f"Procesing time: {(time_end-time_start)*1000}ms")
         # Display the resulting frame
@@ -624,7 +633,26 @@ class Camera:
             return"""
 
         
+    def checkFinishLine(self, top_left=(1000, 900), bottom_right=(1050, 1100)):
+        #debug finishline:
+        cv.line(self.current_frame, top_left, (top_left[0], bottom_right[1]), (0,255,255), 3)
 
+        
+        for v in self.tracked_vehicles:
+            currently_on_finishline = False
+            if top_left[0] < v.x < bottom_right[0] and \
+               top_left[1] < v.y < bottom_right[1]:
+                currently_on_finishline = True
+
+            if not v.is_on_finish_line and currently_on_finishline:
+                #just passed the line:
+                v.is_on_finish_line = True
+                if v.time_start_of_lap > 0:
+                    v.last_laptime = time.time() - v.time_start_of_lap
+                v.time_start_of_lap = time.time()
+
+            if v.is_on_finish_line and not currently_on_finishline:
+                v.is_on_finish_line = False
         
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import math
 import numpy
 import socket
 import struct
+import time
 
 from .helper_functions import *
 from .pid_controller import PIDController
@@ -51,10 +52,20 @@ class Vehicle:
         self.rear_axle_offset_px = 0.065 * self.meters_to_pixels
 
         #current speed of the vehicle
-        self.vehicle_speed = 0 #meters per second
+        self.vehicle_speed = 0 #meters per second; absolute speed
+
+        self.lateral_acceleration_mps = 0
+        self.lateral_speed_mps = 0
+        self.longitudinal_acceleration_mps = 0
+        self.longitudinal_speed_mps = 0
 
         self.speed_filter_values = [] #history of speed values to filter
         self.yaw_rate_filter_values = [] #history of yaw rate values to filter
+
+        #timekeeping
+        self.is_on_finish_line = False
+        self.time_start_of_lap = time.time()
+        self.last_laptime = 0
 
         self.last_update = 0
 
@@ -65,6 +76,7 @@ class Vehicle:
         distances, rays = self.lidar.getReadings(x, y, yaw)
 
         
+        #TODO: this is not very clean as this code is assuming the controler is a disparity extender
         disparities_indexes, directions = self.controller.find_disparities(distances)
         modified_distances, setpoint, steering_angle = self.controller.extend_disparities(distances, 
                                                                                           rays, 
@@ -74,16 +86,17 @@ class Vehicle:
         #compute target velocity
         target_steering_angle_rad = steering_angle
         target_velocity_mps = 0.2
+
         #find out how fast we can go: TODO: find out more reasonable numbers.
         target_steering_angle_deg = abs(math.degrees(target_steering_angle_rad - self.yaw))
         if 0 <= target_steering_angle_deg < 10:
-            target_velocity_mps = 3.0
+            target_velocity_mps = 3.0 *0.1
         if 10 <= target_steering_angle_deg < 20:
-            target_velocity_mps = 2.0
+            target_velocity_mps = 2.0 *0.1
         if 20 <= target_steering_angle_deg < 30:
-            target_velocity_mps = 1.0
+            target_velocity_mps = 1.0 *0.1
         if 30 <= target_steering_angle_deg:
-            target_velocity_mps = 0.5
+            target_velocity_mps = 0.5 *0.1
 
         self.target_velocity_mps = target_velocity_mps
 
@@ -133,6 +146,17 @@ class Vehicle:
             speed *= -1.0
 
         speed = speed / self.meters_to_pixels #convert to m/s
+
+        #compute lateral speed and lateral acceleration
+        #current position in coordinate frame of last position to find out lateral and longitudinal acc
+        if dt != 0:
+            mx, my = rotate(x - self.x, y - self.y, -1 * self.yaw)
+            mx /= self.meters_to_pixels #convert to m/s
+            my /= self.meters_to_pixels #convert to m/s
+            self.lateral_acceleration_mps = my / dt - self.lateral_speed_mps
+            self.lateral_speed_mps = my / dt
+            self.longitudinal_acceleration_mps = mx / dt - self.longitudinal_speed_mps
+            self.longitudinal_speed_mps = mx / dt
 
         self.speed_filter_values.append(speed)
         self.yaw_rate_filter_values.append(yaw_rate_rad_per_sec)
