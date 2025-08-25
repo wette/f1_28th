@@ -68,9 +68,13 @@ class Camera:
         self.circle_diameter_px = circle_diameter_meters * self.meters_to_pixels  #diameter of black and white dots (2cm)
 
         #debug video saver
-        fourcc = cv.VideoWriter_fourcc(*'XVID')
-        self.video_out = cv.VideoWriter('last_video.avi', fourcc, frames_per_seconds, (horizontal_resolution_px,vertical_resolution_px))
+        self.video_out = None
         self.create_debug_video = create_debug_video
+        if create_debug_video:
+            fourcc = cv.VideoWriter_fourcc(*'XVID')
+            self.video_out = cv.VideoWriter('last_video2.avi', fourcc, frames_per_seconds, (horizontal_resolution_px,vertical_resolution_px))
+
+        
         self.frames_to_save = []
         
 
@@ -146,7 +150,7 @@ class Camera:
             for frame in self.frames_to_save:
                 self.video_out.write(frame)
             print("done.")
-        self.video_out.release()
+            self.video_out.release()
         cv.destroyAllWindows()
 
     #display visual aid to adjust pitch, yaw, and roll of physical camera mounted above racetrack
