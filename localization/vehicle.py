@@ -111,7 +111,6 @@ class Vehicle:
 
         #dist to setpoint
         d = math.sqrt((setpoint[0]-x)**2 + (setpoint[1]-y)**2) * (1.0/self.meters_to_pixels)
-        print(d)
         if d < 0.6:
             target_velocity_mps = min(target_velocity_mps, 0.8)
 
@@ -258,19 +257,7 @@ class Vehicle:
         current_motor_value += delta_motor_value
 
         current_motor_value = int(max(80, min(180, current_motor_value))) #clip between 80 and 240 - keep a minimum motor value to prevent the vehicle from getting stuck.
-        #current_motor_value = 80
-
-        #print(f"orig angle: {math.degrees(target_steering_angle_rad)} - ", end="")
-
-        #compute delta steering angle
-        """target_steering_angle_rad = target_steering_angle_rad - self.yaw
-        #print(f"veh. frame angle: {math.degrees(target_steering_angle_rad)} - ", end="")
-
-        #unwind target angle
-        while target_steering_angle_rad < -math.pi:
-            target_steering_angle_rad += math.pi*2
-        while target_steering_angle_rad > math.pi:
-            target_steering_angle_rad -= math.pi*2"""
+        
         
         #print(f"unwound angle: {math.degrees(target_steering_angle_rad)} - ", end="")
 
