@@ -262,8 +262,11 @@ def main():
                  height_over_ground_white_meters = height_over_ground_white_meters,
                  cameraMatrix = cameraMatrix,
                  distortionCoefficients = distortionCoefficients,
-                 from_file="crash.avi",
+                 from_file="last_video.avi",
                  create_debug_video=False)
+    
+    racetrack = Track()
+    racetrack.loadFromFile("track_borders.npy")
 
 
     while cam.is_video_stream_active():
@@ -286,6 +289,17 @@ def main():
                                    vehicles[v.color]["motor_pid"][2],
                                    error_history_length=50)
                     
+                    #setup controller
+                    v.controller = DisparityExtender(car_width=(vehicles[v.color]["width_m"])*meters_to_pixels, 
+                                                     disparity_threshold=50, 
+                                                     tolerance=20)
+                    
+                    #setup lidar
+                    v.lidar = LidarSensor(track=racetrack, 
+                                          field_of_view_deg=vehicles[v.color]["lidar_field_of_view_deg"], 
+                                          numRays=vehicles[v.color]["lidar_numRays"], 
+                                          rayLength_px=vehicles[v.color]["lidar_rayLength_m"] * meters_to_pixels)
+                    
                 else:
                     print("Could not properly detect color of vehicle!")
 
@@ -301,6 +315,10 @@ def main():
                 frame = cam.get_last_frame()
 
                 for vehicle in cam.tracked_vehicles:
+                    #compute vehicle actions
+                    target_velocity_mps, target_steering_angle_rad, rays, setpoint = vehicle.compute_next_command(delta_t=0.08)
+
+                    #draw outcome.
                     boundingbox = vehicle.getBoundingBox(time.time()) #TODO: think about which time to use here!
                     color = (0, 255, 0)
                     if vehicle.ttl < 15:
@@ -308,9 +326,21 @@ def main():
                     Camera.drawBoundingBox(frame, boundingbox, color=color)
                     cv.putText(frame, f"Speed: {vehicle.getSpeed():.2f} m/s", (int(boundingbox[0][0]), int(boundingbox[0][1])), cv.FONT_HERSHEY_SIMPLEX, 0.5,
                                 (0,255,0), 1, cv.LINE_AA)
+                    
+                    #draw lidar rays and setpoint:
+                    if rays is not None:
+                        for ray in rays:
+                            xy = ray.coords.xy
+                            cv.line(frame, [int(xy[0][0]), int(xy[1][0])], [int(xy[0][1]), int(xy[1][1])], hueToBGR(Camera.ColorMap[vehicle.color]), 1)
+
+                
+                    if setpoint is not None:    
+                        c = [int(setpoint[0]), int(setpoint[1])]
+                        cv.circle(frame, c, radius=5, color=hueToBGR(Camera.ColorMap[vehicle.color]), thickness=5, lineType=1)
                 
                 cv.imshow('frame', frame)
-                if cv.waitKey(1) == ord('q'):
+                key = cv.waitKey(0)
+                if key == ord('q'):
                     break
             print("No more cam.tracked_vehicles left.")
 
