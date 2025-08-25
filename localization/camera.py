@@ -7,11 +7,11 @@ from .helper_functions import *
 from .vehicle import Vehicle
 
 class Camera:
-    #Hue from (HSV model)
-    ColorMap = {"green" : 120,
-                "blue"  : 240,
-                "green" : 50,
-                "orange" : 15
+    #Hue from (HSV model) - HSV in opencv is from 0-179 - not 0-359 as per default
+    ColorMap = {"green" : 120/2,
+                "blue"  : 240/2,
+                "yellow" : 60/2,
+                "orange" : 30/2
                 }
     
     def __init__(self,
