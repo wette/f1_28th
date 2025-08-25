@@ -10,7 +10,7 @@ class Camera:
     #Hue from (HSV model)
     ColorMap = {"green" : 120,
                 "blue"  : 240,
-                "yellow" : 60,
+                "green" : 50,
                 "orange" : 15
                 }
     
@@ -32,11 +32,16 @@ class Camera:
                  cameraMatrix = np.array([[1.19164513e+03, 0.00000000e+00, 9.32255365e+02],
                              [0.00000000e+00, 1.19269246e+03, 5.44789222e+02],
                             [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]]),
-                 distortionCoefficients = np.array([[ 0.02473071, -0.39668063,  0.00151336,  0.00085757,  0.25759047]])
+                 distortionCoefficients = np.array([[ 0.02473071, -0.39668063,  0.00151336,  0.00085757,  0.25759047]]),
+                 create_debug_video=True,
+                 from_file=None
                  ):
-        #self.cap = cv.VideoCapture(0) #use default camera driver (might not support 90fps)
-        #self.cap = cv.VideoCapture(0, cv.CAP_V4L) #use V4L to access the camera
-        self.cap = cv.VideoCapture("/Users/wette/Documents/FHBielefeld/eigeneVorlesungen/AutonomeFahrzeuge1zu32/moving_vehicle.avi")
+        
+        if from_file is None:
+            #self.cap = cv.VideoCapture(0) #use default camera driver (might not support 90fps)
+            self.cap = cv.VideoCapture(0, cv.CAP_V4L) #use V4L to access the camera
+        else:
+            self.cap = cv.VideoCapture(from_file)
         
         if not self.cap.isOpened():
             print("Cannot open camera")
@@ -62,6 +67,11 @@ class Camera:
         self.height_over_ground_white_meters = height_over_ground_white_meters #how high is the white dot on the vehicle measured from the ground
         self.circle_diameter_px = circle_diameter_meters * self.meters_to_pixels  #diameter of black and white dots (2cm)
 
+        #debug video saver
+        fourcc = cv.VideoWriter_fourcc(*'XVID')
+        self.video_out = cv.VideoWriter('last_video.avi', fourcc, frames_per_seconds, (horizontal_resolution_px,vertical_resolution_px))
+        self.create_debug_video = create_debug_video
+        self.frames_to_save = []
         
 
 
@@ -98,7 +108,7 @@ class Camera:
     def get_last_frame(self):
         return self.current_frame
 
-    def get_frame(self):
+    def get_frame(self, initializeColorCorrection=False):
         ret, frame = self.cap.read()
         
         # if frame is read correctly ret is True
@@ -106,12 +116,15 @@ class Camera:
             print("Can't receive frame (stream end?). Exiting ...")
             self.video_stream_active = False
             return None
+        
+        if self.create_debug_video:
+            self.frames_to_save.append(frame)
 
         #apply camera correction to frame
         frame = cv.remap(frame, self.remapX, self.remapY, cv.INTER_LINEAR)
 
         #color correct the image
-        frame = self.colorCorrectImage(frame, initializeRatio=True)
+        frame = self.colorCorrectImage(frame, initializeRatio=initializeColorCorrection)
 
         return frame
 
@@ -126,6 +139,14 @@ class Camera:
     def __del__(self):
         # When everything done, release the capture
         self.cap.release()
+
+        #save frames to video file:
+        if self.create_debug_video:
+            print("Saving video to file....")
+            for frame in self.frames_to_save:
+                self.video_out.write(frame)
+            print("done.")
+        self.video_out.release()
         cv.destroyAllWindows()
 
     #display visual aid to adjust pitch, yaw, and roll of physical camera mounted above racetrack
@@ -139,19 +160,13 @@ class Camera:
 
         while True:
             # read frame
-            ret, frame = self.cap.read()
+            frame = self.get_frame(initializeColorCorrection=True)
         
             # if frame is read correctly ret is True
-            if not ret:
+            if frame is None:
                 print("Can't receive frame (stream end?). Exiting ...")
                 self.video_stream_active = False
                 break
-
-            #apply camera correction to frame
-            frame = cv.remap(frame, self.remapX, self.remapY, cv.INTER_LINEAR)
-
-            #color correct the image
-            frame = self.colorCorrectImage(frame, initializeRatio=True)
 
             # Our operations on the frame come here
             gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
@@ -343,8 +358,8 @@ class Camera:
                 if color[0] < thres and color[1] < thres and color[2] < thres:
                     #black dot found
                     black_dots.append( [x,y] )
-                    cv.circle(frame, (x, y), r, (0, 0, 0), 4)
-                    cv.rectangle(frame, (x - 5, y - 5), (x + 5, y + 5), (0, 128, 255), -1)
+                    #cv.circle(frame, (x, y), r, (0, 0, 0), 4)
+                    #cv.rectangle(frame, (x - 5, y - 5), (x + 5, y + 5), (0, 128, 255), -1)
                     #print(f"Found black Dot at {x}, {y}")
                 
                 #white
@@ -352,8 +367,8 @@ class Camera:
                 if color[0] > thres and color[1] > thres and color[2] > thres:
                     #white dot found
                     white_dots.append( [x,y] )
-                    cv.circle(frame, (x, y), r, (255, 255, 255), 4)
-                    cv.rectangle(frame, (x - 5, y - 5), (x + 5, y + 5), (0, 128, 255), -1)
+                    #cv.circle(frame, (x, y), r, (255, 255, 255), 4)
+                    #cv.rectangle(frame, (x - 5, y - 5), (x + 5, y + 5), (0, 128, 255), -1)
                     #print(f"Found white Dot at {x}, {y}")
         return black_dots, white_dots, frame
     
@@ -361,9 +376,10 @@ class Camera:
     def getColorOfVehicle(self, frame, x: int, y: int, yaw: float) -> str:
         #assumption: black circle is surrounded by vehicle color.
         # hence, add a vector of size 1cm to the vehicle position (position of black circle) pointing in yaw direction
-        x_a, y_a = rotate(x=0.01*self.meters_to_pixels + self.circle_diameter_px/2.0, y=0, alpha=-yaw)
+        """x_a, y_a = rotate(x=0.01*self.meters_to_pixels + self.circle_diameter_px/2.0, y=0, alpha=yaw)
         x = int(x+x_a)
-        y = int(y+y_a)
+        y = int(y+y_a)"""
+        #new way: use the color of the darker "black" marker to determine vehicle color.
         if 0 < x < frame.shape[1] and 0 < y < frame.shape[0]:
                 color = frame[y,x]
                 color_hsv = cv.cvtColor(np.uint8([[color]]), cv.COLOR_BGR2HSV)
@@ -384,22 +400,18 @@ class Camera:
 
         while stopDetectionTime > time.time():
             # Capture frame-by-frame
-            ret, frame = self.cap.read()
+            frame = self.get_frame(initializeColorCorrection=True)
             self.current_time = time.time()
 
-            if self.DEBUG: print(f"new frame at {self.current_time}-----------------------")
-
-            #apply camera correction to frame
-            frame = cv.remap(frame, self.remapX, self.remapY, cv.INTER_LINEAR)
-        
             # if frame is read correctly ret is True
-            if not ret:
+            if frame is None:
                 print("Can't receive frame (stream end?). Exiting ...")
                 self.video_stream_active = False
                 break
 
-            #color correct the image
-            frame = self.colorCorrectImage(frame, initializeRatio=True)
+            if self.DEBUG: print(f"new frame at {self.current_time}-----------------------")
+
+           
             self.current_frame = frame
 
             # Our operations on the frame come here
@@ -424,9 +436,9 @@ class Camera:
                 #black_dots, white_dots, frame = self.classifyDotsFromCircles(circles, frame)
 
                 #find a black circle which is close to a white one:
-                threshold = 0.5
+                threshold = 0.4
                 for dot1 in circles:
-                    cv.circle(frame, (dot1[0], dot1[1]), dot1[2], (0, 0, 0), 4)
+                    #cv.circle(frame, (dot1[0], dot1[1]), dot1[2], (0, 0, 0), 4)
                     for dot2 in circles:
                         if dot1[0] == dot2[0] and dot1[1] == dot2[1] :
                             continue
@@ -437,7 +449,7 @@ class Camera:
                             color1 = gray[dot1[1],dot1[0]]
                             color2 = gray[dot2[1],dot2[0]]
 
-                            if abs(float(color1) -float(color2)) < 30:
+                            if abs(float(color1) -float(color2)) < 20:
                                 #two circles of same color
                                 continue
 
@@ -450,8 +462,8 @@ class Camera:
                             color = self.getColorOfVehicle(frame, int(black[0]), int(black[1]), getyaw(black, white))
 
                             self.updateVehiclePosition(black[0], black[1], getyaw(black, white), color=color)
-                        else:
-                            if self.DEBUG: print(f"Distance too far between black and white circle: {distance(dot1, dot2)}")
+                        #else:
+                        #    if self.DEBUG: print(f"Distance too far between black and white circle: {distance(dot1, dot2)}")
 
             # Display the resulting frame
             #cv.imshow('frame', frame)
@@ -469,7 +481,7 @@ class Camera:
             xs.append(p[0])
             ys.append(p[1])
 
-        margin_px = 10 #expand image by amount of pixels in any direction
+        margin_px = 100 #expand image by amount of pixels in any direction
         xstart = int(max(min(xs)-margin_px, 0))
         xend   = int(min(max(xs)+margin_px, frame.shape[1]))
         ystart = int(max(min(ys)-margin_px, 0))
@@ -491,8 +503,8 @@ class Camera:
 
     
         # Capture frame-by-frame
-        ret, frame = self.cap.read()
-        if ret == False:
+        frame = self.get_frame(initializeColorCorrection=False)
+        if frame is None:
             print("End-of-Stream detected. Stop tracking!")
             self.video_stream_active = False
             return
@@ -501,15 +513,11 @@ class Camera:
         if self.DEBUG: print("new frame -----------------------")
 
         #apply camera correction to frame
-        frame = cv.remap(frame, self.remapX, self.remapY, cv.INTER_LINEAR)
         self.current_frame = frame
         
         time_for_one_pass = -1
     
         # if frame is read correctly ret is True
-        if not ret:
-            print("Can't receive frame (stream end?). Exiting ...")
-            return
 
         for vehicle in self.tracked_vehicles:
 
@@ -536,7 +544,7 @@ class Camera:
             subimage_gray = cv.cvtColor(subimage_color, cv.COLOR_BGR2GRAY)
 
             # detect circles in the subimage
-            circles = cv.HoughCircles(subimage_gray, cv.HOUGH_GRADIENT_ALT, 1.5, minDist=20, param1=300, param2=0.8, minRadius=int((self.circle_diameter_px/2.0)*0.5), maxRadius=int((self.circle_diameter_px/2.0)*1.5))
+            circles = cv.HoughCircles(subimage_gray, cv.HOUGH_GRADIENT_ALT, 1.2, minDist=20, param1=300, param2=0.8, minRadius=int((self.circle_diameter_px/2.0)*0.5), maxRadius=int((self.circle_diameter_px/2.0)*3))
             
             # ensure at least some circles were found
             if circles is not None:
@@ -551,9 +559,9 @@ class Camera:
                 #if self.DEBUG: print(f"Detected {len(black_dots)} black, and {len(white_dots)} white circles.")
 
                 #find a black circle which is close to a white one:
-                threshold = 0.5
+                threshold = 0.4
                 for dot1 in circles:
-                    cv.circle(subimage_color, (dot1[0], dot1[1]), dot1[2], (0, 0, 0), 4)
+                    #cv.circle(subimage_color, (dot1[0], dot1[1]), dot1[2], (0, 0, 0), 4)
                     for dot2 in circles:
                         if dot1[0] == dot2[0] and dot1[1] == dot2[1] :
                             continue
@@ -615,7 +623,6 @@ class Camera:
             self.drawBoundingBox(frame, boundingbox, color=color)
             cv.putText(frame, f"Speed: {vehicle.getSpeed():.2f} m/s", (int(boundingbox[0][0]), int(boundingbox[0][1])), cv.FONT_HERSHEY_SIMPLEX, 1,
                         (0,255,0), 2, cv.LINE_AA)"""
-
         #print FPS
         if time_for_one_pass > 0.0:
             fps = 1.0/time_for_one_pass

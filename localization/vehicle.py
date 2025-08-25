@@ -78,25 +78,43 @@ class Vehicle:
         
         #TODO: this is not very clean as this code is assuming the controler is a disparity extender
         disparities_indexes, directions = self.controller.find_disparities(distances)
-        modified_distances, setpoint, steering_angle = self.controller.extend_disparities(distances, 
+        modified_distances, setpoint, target_steering_angle_rad = self.controller.extend_disparities(distances, 
                                                                                           rays, 
                                                                                           disparities_indexes, 
                                                                                           directions)
-        
+
+
+        target_steering_angle_rad = target_steering_angle_rad - self.yaw
+
+        #unwind target angle
+        while target_steering_angle_rad < -math.pi:
+            target_steering_angle_rad += math.pi*2
+        while target_steering_angle_rad > math.pi:
+            target_steering_angle_rad -= math.pi*2
+
+
         #compute target velocity
-        target_steering_angle_rad = steering_angle
-        target_velocity_mps = 0.2
+        target_velocity_mps = 0.5
 
         #find out how fast we can go: TODO: find out more reasonable numbers.
-        target_steering_angle_deg = abs(math.degrees(target_steering_angle_rad - self.yaw))
-        if 0 <= target_steering_angle_deg < 10:
-            target_velocity_mps = 3.0 *0.1
+        target_steering_angle_deg = abs(math.degrees(target_steering_angle_rad))
+        if 0 <= target_steering_angle_deg < 5:
+            target_velocity_mps = 2.0
+        if 5 <= target_steering_angle_deg < 10:
+            target_velocity_mps = 1.2
         if 10 <= target_steering_angle_deg < 20:
-            target_velocity_mps = 2.0 *0.1
+            target_velocity_mps = 0.9
         if 20 <= target_steering_angle_deg < 30:
-            target_velocity_mps = 1.0 *0.1
+            target_velocity_mps = 0.8
         if 30 <= target_steering_angle_deg:
-            target_velocity_mps = 0.5 *0.1
+            target_velocity_mps = 0.7
+
+        #dist to setpoint
+        d = math.sqrt((setpoint[0]-x)**2 + (setpoint[1]-y)**2) * (1.0/self.meters_to_pixels)
+        print(d)
+        if d < 0.6:
+            target_velocity_mps = min(target_velocity_mps, 0.8)
+
 
         self.target_velocity_mps = target_velocity_mps
 
@@ -126,7 +144,7 @@ class Vehicle:
         dt = current_time - self.last_update
         yaw_rate_rad_per_sec = 0.0
         dist = math.sqrt(dx**2 + dy**2)
-        if dt != 0:
+        if dt > 0:
             speed = dist / dt
             yaw_rate_rad_per_sec = (yaw - self.yaw) / dt
         else:
@@ -136,7 +154,8 @@ class Vehicle:
             speed = 0.0     #standstill
 
         #direction: forwards or backwards?
-        angle_of_movement = getyaw( (self.x, self.y), (x, y) )
+        #TODO: fix bug by unwinding angles. otherwise compare does not work.
+        """angle_of_movement = getyaw( (self.x, self.y), (x, y) )
         forwards_motion = False
         if math.radians(-45) < angle_of_movement - yaw < math.radians(45):
             #movement along positive x axis of the vehicle
@@ -144,6 +163,8 @@ class Vehicle:
         
         if not forwards_motion:
             speed *= -1.0
+
+        print(f"angle_of_movement: {math.degrees(angle_of_movement)}, forwards: {forwards_motion}")"""
 
         speed = speed / self.meters_to_pixels #convert to m/s
 
@@ -235,18 +256,41 @@ class Vehicle:
         #ask PID control what to do with the motor voltage
         delta_motor_value = self.motor_pid.update(target_velocity_mps - self.vehicle_speed)
         current_motor_value += delta_motor_value
-        current_motor_value = int(max(0, min(2**8, current_motor_value))) #clip between 0 and 2^8
+
+        current_motor_value = int(max(80, min(180, current_motor_value))) #clip between 80 and 240 - keep a minimum motor value to prevent the vehicle from getting stuck.
+        #current_motor_value = 80
+
+        #print(f"orig angle: {math.degrees(target_steering_angle_rad)} - ", end="")
 
         #compute delta steering angle
-        target_steering_angle_rad = target_steering_angle_rad - self.yaw
+        """target_steering_angle_rad = target_steering_angle_rad - self.yaw
+        #print(f"veh. frame angle: {math.degrees(target_steering_angle_rad)} - ", end="")
+
+        #unwind target angle
+        while target_steering_angle_rad < -math.pi:
+            target_steering_angle_rad += math.pi*2
+        while target_steering_angle_rad > math.pi:
+            target_steering_angle_rad -= math.pi*2"""
+        
+        #print(f"unwound angle: {math.degrees(target_steering_angle_rad)} - ", end="")
+
         #check steering angle is in bounds
         target_steering_angle_rad = max(-self.max_steering_angle_rad, min(self.max_steering_angle_rad, target_steering_angle_rad))
+        #print(f"bounds angle: {math.degrees(target_steering_angle_rad)} - ", end="")
 
         #TODO: think about filtering the steering angle to make it more smooth --> another PID controller for steering?
-        target_steering_angle_rad *= 0.7 # poor man's P controller ;)
+        target_steering_angle_rad *= 0.6 # poor man's P controller ;)
 
-        #convert steering angle to number between 0 and 2^8,
-        steering_angle = int(((target_steering_angle_rad/self.max_steering_angle_rad + 1.0) / 0.5) * 2**8) #TODO: this is most likely NOT what the vehicle expects!
+        #convert steering angle to number between 10 and 170 (for some reason...), 90 beeing 0°, 10 beeing max left, 170 max right
+        #target_steering_angle_rad can be between -self.max_steering_angle_rad and +self.max_steering_angle_rad
+        target_angle_percent = target_steering_angle_rad / self.max_steering_angle_rad + 1#between 0 and 2 - one beeing forward steering
+        steering_angle = target_angle_percent*80 + 10
+        steering_angle = min(steering_angle, 170) #clip at 170
+        steering_angle = max(steering_angle, 10)  #clip at 10
+
+        #print(f"PWM steering: {steering_angle}, PWM Motor: {current_motor_value}")
+
+        #steering_angle = int(((target_steering_angle_rad/self.max_steering_angle_rad + 1.0) / 0.5) * 160)+10 #TODO: this is most likely NOT what the vehicle expects!
 
         #send data over to hardware
         

@@ -93,7 +93,7 @@ class DisparityExtender:
             (1 - t) * rays[max_distance_index].xy[1][0]
             + t * rays[max_distance_index].xy[1][1],
         ]
-        angle = np.atan2(
+        angle = np.arctan2(
             setpoint[1] - rays[max_distance_index].xy[1][0],
             setpoint[0] - rays[max_distance_index].xy[0][0],
         )

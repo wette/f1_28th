@@ -27,21 +27,21 @@ vehicles = {
             "rear_axle_offset_m" : 0.065, #rear-center offset of the center of rear axle (where the black Dot on the vehicle is)
             "max_steering_angle_deg": 45,
             "steering_angle_offset_deg": 0.0,
-            "lidar_field_of_view_deg": 60, 
-            "lidar_numRays": 40, 
+            "lidar_field_of_view_deg": 80, 
+            "lidar_numRays": 50, 
             "lidar_rayLength_m" : 1.0
         },
         "green": {
-            "ip": "10.134.137.91", 
+            "ip": "10.134.137.41", 
             "port": 6446,
-            "motor_pid": (30, 0, 0),         #PID parameters to control the motor
+            "motor_pid": (20, 0, 0),         #PID parameters to control the motor
             "length_m": 0.18,           #vehicle length
             "width_m":  0.08,           #vehicle width
             "rear_axle_offset_m" : 0.065, #rear-center offset of the center of rear axle (where the black Dot on the vehicle is)
-            "max_steering_angle_deg": 45,
+            "max_steering_angle_deg": 40,
             "steering_angle_offset_deg": 0.0,
-            "lidar_field_of_view_deg": 60, 
-            "lidar_numRays": 40, 
+            "lidar_field_of_view_deg": 100, 
+            "lidar_numRays": 70, 
             "lidar_rayLength_m" : 1.0
         },
 }
@@ -61,8 +61,8 @@ threshold_brightness_of_black = 150       #rgb from 0-255
 threshold_brightness_of_white = 200        #rgb from 0-255
 circle_diameter_meters = 0.025  #diameter of black and white dots (2cm)
 size_between_black_and_white_center_meters = 0.08  #8cm from center to center
-height_over_ground_black_meters = 0.042    #how high is the black dot on the vehicle measured from the ground
-height_over_ground_white_meters = 0.025    #how high is the white dot on the vehicle measured from the ground
+height_over_ground_black_meters = 0.055    #how high is the black dot on the vehicle measured from the ground
+height_over_ground_white_meters = 0.035    #how high is the white dot on the vehicle measured from the ground
 
 #camera correction parameters
 cameraMatrix = np.array([[1.19164513e+03, 0.00000000e+00, 9.32255365e+02],
@@ -94,10 +94,11 @@ def showImageThread(d: dict, track: Track):
             #draw control loop frequency:
             i = 1
             for vehicle in vehicles:
-                if "control_loop_frequency_" + vehicle.color in d.keys():
-                    cv.putText(frame, f"Control frequency: {d["control_loop_frequency_" + vehicle.color]:.1f} Hz", (50, 50+i*20), cv.FONT_HERSHEY_SIMPLEX, 0.7,
-                        hueToBGR(Camera.ColorMap[vehicle.color]), 1, cv.LINE_AA)
-                    i += 1
+                if vehicle.color is not None:
+                    if "control_loop_frequency_" + vehicle.color in d.keys():
+                        cv.putText(frame, f"Control frequency: {d['control_loop_frequency_' + vehicle.color]:.1f} Hz", (50, 50+i*20), cv.FONT_HERSHEY_SIMPLEX, 0.7,
+                            hueToBGR(Camera.ColorMap[vehicle.color]), 1, cv.LINE_AA)
+                        i += 1
             
             #draw laptimes:
             i = 0
@@ -189,8 +190,8 @@ def showImageThread(d: dict, track: Track):
 # Data is transfered from the main thread using the d parameter
 def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
     print(f"Starting controlVehicleThread for the {vehicleColor} vehicle.")
-    target_fps = 90
-    loop_time_s = 1.0 / target_fps
+    target_control_frequency = 30
+    loop_time_s = 1.0 / target_control_frequency
     current_motor_value = 0
     pid_control_motor : PIDController = None  #we need to store the motor pid in the process as our copy of the vehicle it not synchronized back to the other processes.
     while d["raceEnabled"]:
@@ -204,10 +205,11 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
                 break
         
         if v is None:
-            print(f"Stopping controlVehicleThread for the {vehicleColor} vehicle as it is no longer found on the racetrack.")
+            #print(f"Skipping controlVehicleThread for the {vehicleColor} vehicle as it is no longer found on the racetrack.")
             d["lidar_rays_" + vehicleColor] = None
             d["setpoints_" + vehicleColor]  = None
-            return
+
+            continue
         
         if pid_control_motor is None:
             pid_control_motor = v.motor_pid
@@ -215,7 +217,7 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
             v.motor_pid = pid_control_motor #put in our local copy of the pid controller.
 
         #compute vehicle actions
-        target_velocity_mps, target_steering_angle_rad, rays, setpoint = v.compute_next_command(delta_t=delta_t)
+        target_velocity_mps, target_steering_angle_rad, rays, setpoint = v.compute_next_command(delta_t=0.08)
 
 
         #send actions to vehicle
@@ -238,7 +240,7 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
         if sleep_time > 0:
             time.sleep(sleep_time)
 
-        d["control_loop_frequency_" +  vehicleColor] = 1.0/dt
+        d["control_loop_frequency_" +  vehicleColor] = 1.0/(dt+sleep_time)
 
 
 
@@ -289,10 +291,6 @@ def main():
     d["showVisualization"] = True
     d["raceEnabled"] = True
 
-    print("Do you want to save the raw video to file?")
-    if input().upper() == "Y":
-        d["saveVideoToFile"] = True
-
 
     #spawn one process for visualization:
     process_visualization = Process(target=showImageThread, args=(d, racetrack))
@@ -324,7 +322,7 @@ def main():
                                    error_history_length=50)
                     
                     #setup controller
-                    v.controller = DisparityExtender(car_width=vehicles[v.color]["width_m"]*meters_to_pixels, 
+                    v.controller = DisparityExtender(car_width=(vehicles[v.color]["width_m"])*meters_to_pixels, 
                                                      disparity_threshold=50, 
                                                      tolerance=20)
                     
@@ -346,7 +344,7 @@ def main():
                 #update position of each vehicle
                 cam.trackVehicles()
 
-                cam.checkFinishLine(top_left=(1000, 950), bottom_right=(1050, 1100))
+                cam.checkFinishLine(top_left=(1000, 950), bottom_right=(1050, 1120))
 
                 #send frame and currently tracked vehicles to other processes
                 d["frame"] = cam.get_last_frame()
