@@ -147,7 +147,7 @@ def main():
                 for vehicle in cam.tracked_vehicles:
                     if v.color in vehicles.keys():
                         #compute vehicle actions
-                        target_velocity_mps, target_steering_angle_rad, rays, setpoint = vehicle.compute_next_command(delta_t=0.05)
+                        target_velocity_mps, target_steering_angle_rad, rays, setpoint = vehicle.compute_next_command(delta_t=0.3)
 
                         #draw outcome.
                         boundingbox = vehicle.getBoundingBox(time.time()) #TODO: think about which time to use here!
@@ -159,7 +159,7 @@ def main():
                                     (0,255,0), 1, cv.LINE_AA)
                         
                         #draw boundingbox set 100ms in future for reference:
-                        boundingbox = vehicle.getBoundingBox(time.time()+0.1) #TODO: think about which time to use here!
+                        boundingbox = vehicle.getBoundingBox(time.time()+0.3) #TODO: think about which time to use here!
                         color = (255, 255, 255)
                         Camera.drawBoundingBox(frame, boundingbox, color=color)
 

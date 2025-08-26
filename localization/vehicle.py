@@ -87,10 +87,7 @@ class Vehicle:
         target_steering_angle_rad = target_steering_angle_rad - self.yaw
 
         #unwind target angle
-        while target_steering_angle_rad < -math.pi:
-            target_steering_angle_rad += math.pi*2
-        while target_steering_angle_rad > math.pi:
-            target_steering_angle_rad -= math.pi*2
+        target_steering_angle_rad = unwind_angle(target_steering_angle_rad)
 
 
         #compute target velocity
@@ -148,7 +145,7 @@ class Vehicle:
         dist = math.sqrt(dx**2 + dy**2)
         if dt > 0:
             speed = dist / dt
-            yaw_rate_rad_per_sec = (yaw - self.yaw) / dt
+            yaw_rate_rad_per_sec = unwind_angle(yaw - self.yaw) / dt
         else:
             speed = self.vehicle_speed
 
@@ -199,12 +196,19 @@ class Vehicle:
         #TODO: implement constant velocity and turn rate model
         #for now simple linear estimation...
         dt = at_time - self.last_update
+        x1, y1, yaw1 = None, None, None
 
+        #simple linear extrapolation in direction of the vehicle.
         distance = (dt * self.vehicle_speed + longitudinal_offset_m) * self.meters_to_pixels
-        x1 = self.x + math.cos(self.yaw) * distance
-        y1 = self.y + math.sin(self.yaw) * distance
+        dx, dy = rotate(distance, 0.0, unwind_angle(self.yaw + self.yaw_rate*dt))
+        x1 = self.x + dx
+        y1 = self.y + dy
+        yaw1 = unwind_angle(self.yaw + self.yaw_rate*dt)
 
-        return x1, y1, self.yaw
+        if dt > 1:
+            print(self.x, self.y, self.yaw, self.yaw_rate, dt, self.vehicle_speed, "-->", x1, y1, yaw1)
+
+        return x1, y1, yaw1
     
     #returns coordinates of a boundingbox of the vehicle.
     #at at_time is not None: projected into future.
