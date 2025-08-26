@@ -33,7 +33,7 @@ class Camera:
                              [0.00000000e+00, 1.19269246e+03, 5.44789222e+02],
                             [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]]),
                  distortionCoefficients = np.array([[ 0.02473071, -0.39668063,  0.00151336,  0.00085757,  0.25759047]]),
-                 create_debug_video=True,
+                 create_debug_video=False,
                  from_file=None
                  ):
         
@@ -71,8 +71,7 @@ class Camera:
         self.video_out = None
         self.create_debug_video = create_debug_video
         if create_debug_video:
-            fourcc = cv.VideoWriter_fourcc(*'XVID')
-            self.video_out = cv.VideoWriter('last_video2.avi', fourcc, frames_per_seconds, (horizontal_resolution_px,vertical_resolution_px))
+            self.setup_debug_video()
 
         
         self.frames_to_save = []
@@ -105,6 +104,11 @@ class Camera:
         self.__setup_video_stream__()
 
         self.video_stream_active = True
+
+    def setup_debug_video(self):
+        self.create_debug_video = True
+        fourcc = cv.VideoWriter_fourcc(*'XVID')
+        self.video_out = cv.VideoWriter('last_video.avi', fourcc, self.frames_per_seconds, (self.horizontal_resolution_px,self.vertical_resolution_px))
 
     def is_video_stream_active(self):
         return self.video_stream_active
@@ -464,8 +468,10 @@ class Camera:
                                 white = dot1.copy()
                             #black and white match: we found a vehicle.
                             color = self.getColorOfVehicle(frame, int(black[0]), int(black[1]), getyaw(black, white))
-
-                            self.updateVehiclePosition(black[0], black[1], getyaw(black, white), color=color)
+                            if color is not None:
+                                self.updateVehiclePosition(black[0], black[1], getyaw(black, white), color=color)
+                            else:
+                                print("Not tracking vehicle, as its color is unknown.")
                         #else:
                         #    if self.DEBUG: print(f"Distance too far between black and white circle: {distance(dot1, dot2)}")
 

@@ -135,6 +135,7 @@ def main():
             #tracking loop
             delta_t = 1.0/frames_per_seconds
             while len(cam.tracked_vehicles) > 0:
+                
                 #update position of each vehicle
                 cam.trackVehicles()
 
@@ -144,29 +145,36 @@ def main():
                 frame = cam.get_last_frame()
 
                 for vehicle in cam.tracked_vehicles:
-                    #compute vehicle actions
-                    target_velocity_mps, target_steering_angle_rad, rays, setpoint = vehicle.compute_next_command(delta_t=0.08)
+                    if v.color in vehicles.keys():
+                        #compute vehicle actions
+                        target_velocity_mps, target_steering_angle_rad, rays, setpoint = vehicle.compute_next_command(delta_t=0.05)
 
-                    #draw outcome.
-                    boundingbox = vehicle.getBoundingBox(time.time()) #TODO: think about which time to use here!
-                    color = (0, 255, 0)
-                    if vehicle.ttl < 15:
-                        color = (0, 0, 255)
-                    Camera.drawBoundingBox(frame, boundingbox, color=color)
-                    cv.putText(frame, f"Speed: {vehicle.getSpeed():.2f} m/s", (int(boundingbox[0][0]), int(boundingbox[0][1])), cv.FONT_HERSHEY_SIMPLEX, 0.5,
-                                (0,255,0), 1, cv.LINE_AA)
+                        #draw outcome.
+                        boundingbox = vehicle.getBoundingBox(time.time()) #TODO: think about which time to use here!
+                        color = (0, 255, 0)
+                        if vehicle.ttl < 15:
+                            color = (0, 0, 255)
+                        Camera.drawBoundingBox(frame, boundingbox, color=color)
+                        cv.putText(frame, f"Speed: {vehicle.getSpeed():.2f} m/s", (int(boundingbox[0][0]), int(boundingbox[0][1])), cv.FONT_HERSHEY_SIMPLEX, 0.5,
+                                    (0,255,0), 1, cv.LINE_AA)
+                        
+                        #draw boundingbox set 100ms in future for reference:
+                        boundingbox = vehicle.getBoundingBox(time.time()+0.1) #TODO: think about which time to use here!
+                        color = (255, 255, 255)
+                        Camera.drawBoundingBox(frame, boundingbox, color=color)
+
+                        
+                        #draw lidar rays and setpoint:
+                        if rays is not None:
+                            for ray in rays:
+                                xy = ray.coords.xy
+                                cv.line(frame, [int(xy[0][0]), int(xy[1][0])], [int(xy[0][1]), int(xy[1][1])], hueToBGR(Camera.ColorMap[vehicle.color]), 1)
+
                     
-                    #draw lidar rays and setpoint:
-                    if rays is not None:
-                        for ray in rays:
-                            xy = ray.coords.xy
-                            cv.line(frame, [int(xy[0][0]), int(xy[1][0])], [int(xy[0][1]), int(xy[1][1])], hueToBGR(Camera.ColorMap[vehicle.color]), 1)
-
-                
-                    if setpoint is not None:    
-                        c = [int(setpoint[0]), int(setpoint[1])]
-                        cv.circle(frame, c, radius=5, color=hueToBGR(Camera.ColorMap[vehicle.color]), thickness=5, lineType=1)
-                
+                        if setpoint is not None:    
+                            c = [int(setpoint[0]), int(setpoint[1])]
+                            cv.circle(frame, c, radius=5, color=hueToBGR(Camera.ColorMap[vehicle.color]), thickness=5, lineType=1)
+                    
                 cv.imshow('frame', frame)
                 key = cv.waitKey(0)
                 if key == ord('q'):

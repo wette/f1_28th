@@ -40,8 +40,8 @@ vehicles = {
             "rear_axle_offset_m" : 0.065, #rear-center offset of the center of rear axle (where the black Dot on the vehicle is)
             "max_steering_angle_deg": 40,
             "steering_angle_offset_deg": 0.0,
-            "lidar_field_of_view_deg": 100, 
-            "lidar_numRays": 70, 
+            "lidar_field_of_view_deg": 140, 
+            "lidar_numRays": 140, 
             "lidar_rayLength_m" : 1.0
         },
 }
@@ -190,7 +190,7 @@ def showImageThread(d: dict, track: Track):
 # Data is transfered from the main thread using the d parameter
 def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
     print(f"Starting controlVehicleThread for the {vehicleColor} vehicle.")
-    target_control_frequency = 30
+    target_control_frequency = 40
     loop_time_s = 1.0 / target_control_frequency
     current_motor_value = 0
     pid_control_motor : PIDController = None  #we need to store the motor pid in the process as our copy of the vehicle it not synchronized back to the other processes.
@@ -217,7 +217,7 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
             v.motor_pid = pid_control_motor #put in our local copy of the pid controller.
 
         #compute vehicle actions
-        target_velocity_mps, target_steering_angle_rad, rays, setpoint = v.compute_next_command(delta_t=0.08)
+        target_velocity_mps, target_steering_angle_rad, rays, setpoint = v.compute_next_command(delta_t=0.1)
 
 
         #send actions to vehicle
@@ -280,6 +280,11 @@ def main():
         racetrack.saveToFile("track_borders.npy")
     else:
         racetrack.loadFromFile("track_borders.npy")
+
+    print("Do you want to write the camera stream as video to disk for debugging (y/n)?")
+    key = input()
+    if key.upper() == "Y":
+        cam.setup_debug_video()
 
 
     # create manager object for multiprocessing - used for inter-process communication

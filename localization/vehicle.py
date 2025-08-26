@@ -72,7 +72,7 @@ class Vehicle:
         self.ttl = 5
 
     def compute_next_command(self, delta_t : float):
-        x, y, yaw = self.getPositionEstimate(self.last_update + delta_t) #TODO: find out which delta is required here!
+        x, y, yaw = self.getPositionEstimate(self.last_update + delta_t, longitudinal_offset_m=0.03) #TODO: find out which delta is required here!
         distances, rays = self.lidar.getReadings(x, y, yaw)
 
         
@@ -113,6 +113,9 @@ class Vehicle:
         d = math.sqrt((setpoint[0]-x)**2 + (setpoint[1]-y)**2) * (1.0/self.meters_to_pixels)
         if d < 0.6:
             target_velocity_mps = min(target_velocity_mps, 0.8)
+
+        #debug: limit target_velocity_mps to fixed value
+        #target_velocity_mps = 0.7
 
 
         self.target_velocity_mps = target_velocity_mps
@@ -190,13 +193,14 @@ class Vehicle:
         self.yaw = yaw
         self.last_update = current_time
     
-    #returns projected x,y,yaw for time at_time
-    def getPositionEstimate(self, at_time):
+    #returns projected x,y,yaw for time at_time (center of the rear axle)
+    #longitudinal_offset_m adds a distance in front of the vehicle (where vehile is the center of the rear axle)
+    def getPositionEstimate(self, at_time, longitudinal_offset_m=0.0):
         #TODO: implement constant velocity and turn rate model
         #for now simple linear estimation...
         dt = at_time - self.last_update
 
-        distance = dt * self.vehicle_speed * self.meters_to_pixels
+        distance = (dt * self.vehicle_speed + longitudinal_offset_m) * self.meters_to_pixels
         x1 = self.x + math.cos(self.yaw) * distance
         y1 = self.y + math.sin(self.yaw) * distance
 
