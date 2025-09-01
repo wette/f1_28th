@@ -11,7 +11,9 @@ class Camera:
     ColorMap = {"green" : 120/2,
                 "blue"  : 240/2,
                 "yellow" : 60/2,
-                "orange" : 30/2
+                "red"    : 360/2,
+                "orange" : 30/2,
+                
                 }
     
     def __init__(self,
@@ -21,7 +23,7 @@ class Camera:
                  opening_angle_vertical_degrees = 88.0,
                  opening_angle_horizontal_degrees = 126.0,
                  meters_to_pixels = 666, #1075,
-                 max_speed_vehicle_mps = 4.0,
+                 max_speed_vehicle_mps = 2.0,
                  minimum_brightness = 1.2, #2.7,
                  threshold_brightness_of_black = 150,
                  threshold_brightness_of_white = 200,
@@ -47,7 +49,7 @@ class Camera:
             print("Cannot open camera")
             exit()
 
-        self.DEBUG = False
+        self.DEBUG = True
 
         #camera stream properties
         self.vertical_resolution_px = vertical_resolution_px
@@ -116,7 +118,7 @@ class Camera:
     def get_last_frame(self):
         return self.current_frame
 
-    def get_frame(self, initializeColorCorrection=False):
+    def get_frame(self, initializeColorCorrection=False, colorCorrect=True):
         ret, frame = self.cap.read()
         
         # if frame is read correctly ret is True
@@ -314,16 +316,17 @@ class Camera:
     def updateVehiclePosition(self, xPos : int, yPos : int, yaw : float, color: str, detect_new_vehicles: bool = True):
         threshold = (self.max_speed_vehicle_mps * self.meters_to_pixels) / self.frames_per_seconds
         found_vehicle = None
+        nearest_vehicle = None
         for v in self.tracked_vehicles:
             if distance( (xPos, yPos), list(v.getPosition()) ) < threshold and \
-                abs((v.getOrientation() - yaw)) < 0.3 or\
-                abs((v.getOrientation() - yaw)) > (2*math.pi - 0.3):
+                (abs((v.getOrientation() - yaw)) < 0.3 or\
+                abs((v.getOrientation() - yaw)) > (2*math.pi - 0.3)):
 
-                found_vehicle = v
-                break
-            else:
-                if self.DEBUG: print(f"Distance too large or yaw not matching: {distance( (xPos, yPos), list(v.getPosition()) )} < {threshold}")
-                if self.DEBUG: print(f"vehicle yaw: {v.getOrientation()}, circle yaw: {yaw}, diff: {v.getOrientation() - yaw}")
+                if nearest_vehicle is None or \
+                        distance(list(v.getPosition()), (xPos, yPos)) < distance(list(nearest_vehicle.getPosition()), (xPos, yPos)):
+                    nearest_vehicle = v
+        
+        found_vehicle = nearest_vehicle
         
         if found_vehicle is not None:
             found_vehicle.updatePose(xPos, yPos, yaw, self.current_time)
@@ -394,7 +397,10 @@ class Camera:
                 hue = color_hsv[0][0][0]
                 threshold = 20
                 for name, val in Camera.ColorMap.items():
-                    if val-threshold < hue < val+threshold:
+                    lo = val-threshold
+                    hi = val+threshold
+
+                    if lo < hue < hi or lo < hue-180 < hi:  #check for modulo 180 in range...
                         return name
                     
                 print(f"Error: Could not figure out which color the vehicle has: {color} (hue {hue}) at ({x},{y})")
@@ -513,7 +519,7 @@ class Camera:
     def trackVehicles(self, dt=None):
     
         # Capture frame-by-frame
-        frame = self.get_frame(initializeColorCorrection=False)
+        frame = self.get_frame(initializeColorCorrection=False, colorCorrect=False)
         if frame is None:
             print("End-of-Stream detected. Stop tracking!")
             self.video_stream_active = False
@@ -545,13 +551,13 @@ class Camera:
 
             if subimage.shape[0] < 2 or subimage.shape[1] < 2:
                 #we lost a vehicle!
+                print(f"lost vehicle {vehicle.color}, as it drove out-of-frame.")
                 self.tracked_vehicles.remove(vehicle)
                 continue
 
 
             #subimage_color = self.colorCorrectImage(subimage, initializeRatio=False)
             subimage_color = subimage
-            #subimage_color = subimage
 
             subimage_color = cv.medianBlur(subimage_color, 5)
             #subimage_color = cv.medianBlur(subimage_color, 5) #2nd time blur
@@ -622,11 +628,11 @@ class Camera:
 
 
             #show portion of image which we used
-            frame[y_offset:y_offset+subimage_color.shape[0], x_offset:x_offset+subimage_color.shape[1]] = subimage_color
+            #frame[y_offset:y_offset+subimage_color.shape[0], x_offset:x_offset+subimage_color.shape[1]] = subimage_color
 
-            time_for_one_pass = time.time() - self.time_end
-            self.time_end = time.time()
-            #debug info
+        time_for_one_pass = time.time() - self.time_end
+        self.time_end = time.time()
+        #debug info
 
 
         """for vehicle in self.tracked_vehicles:

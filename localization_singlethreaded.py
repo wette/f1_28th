@@ -16,35 +16,8 @@ import copy
 import collections
 
 
-#ip addresses of vehicles
-vehicles = {
-        "orange": {
-            "ip": "10.134.137.90", 
-            "port": 6446,
-            "motor_pid": (20, 0, 0.01),    #PID parameters to control the motor
-            "length_m": 0.18,           #vehicle length
-            "width_m":  0.08,           #vehicle width
-            "rear_axle_offset_m" : 0.065, #rear-center offset of the center of rear axle (where the black Dot on the vehicle is)
-            "max_steering_angle_deg": 45,
-            "steering_angle_offset_deg": 0.0,
-            "lidar_field_of_view_deg": 80, 
-            "lidar_numRays": 50, 
-            "lidar_rayLength_m" : 1.0
-        },
-        "green": {
-            "ip": "10.134.137.41", 
-            "port": 6446,
-            "motor_pid": (20, 0, 0),         #PID parameters to control the motor
-            "length_m": 0.18,           #vehicle length
-            "width_m":  0.08,           #vehicle width
-            "rear_axle_offset_m" : 0.065, #rear-center offset of the center of rear axle (where the black Dot on the vehicle is)
-            "max_steering_angle_deg": 40,
-            "steering_angle_offset_deg": 0.0,
-            "lidar_field_of_view_deg": 80, 
-            "lidar_numRays": 50, 
-            "lidar_rayLength_m" : 1.0
-        },
-}
+#ip addresses and parameters of vehicles
+from vehicle_config import vehicles
 
 #camera parameters
 vertical_resolution_px = 1200
@@ -55,7 +28,7 @@ opening_angle_horizontal_degrees = 126.0
 
 #physical parameters of camera and vehicle features
 meters_to_pixels = 681     #how many pixels are in one meter?
-max_speed_vehicle_mps = 4.0        #max speed of a car in meters per second
+max_speed_vehicle_mps = 5.0        #max speed of a car in meters per second
 minimum_brightness = 1.0 #2.7   #used to brighten the image of the webcam
 threshold_brightness_of_black = 150       #rgb from 0-255
 threshold_brightness_of_white = 200        #rgb from 0-255
@@ -134,6 +107,9 @@ def main():
 
             #tracking loop
             delta_t = 1.0/frames_per_seconds
+
+            last_box = None
+            x = 0
             while len(cam.tracked_vehicles) > 0:
                 
                 #update position of each vehicle
@@ -145,45 +121,56 @@ def main():
                 frame = cam.get_last_frame()
 
                 #end-to-end-delay
-                end_to_end_delay_s = 0.1
+                end_to_end_delay_s = 0.17#0.13#0.145
 
                 #virtual opponents
-                op = Vehicle(1000, 500, math.radians(-70), meters_to_pixels)
-                op.setPhysicalProperties(0.18, 0.08, 0.04, 40, 0)
-                virtual_opponents = [op]
+                #op = Vehicle(1000, 500, math.radians(-70), meters_to_pixels)
+                #op.setPhysicalProperties(0.18, 0.08, 0.04, 40, 0)
+                #virtual_opponents = [op]
+                virtual_opponents = []
 
                 for vehicle in cam.tracked_vehicles:
-                    if v.color in vehicles.keys():
-                        #compute vehicle actions
-                        target_velocity_mps, target_steering_angle_rad, rays, setpoint = vehicle.compute_next_command(delta_t=end_to_end_delay_s, opponents=virtual_opponents)
-
-                        #draw outcome.
-                        boundingbox = vehicle.getBoundingBox(cam.current_time) #TODO: think about which time to use here!
-                        color = (0, 255, 0)
-                        if vehicle.ttl < 15:
-                            color = (0, 0, 255)
-                        Camera.drawBoundingBox(frame, boundingbox, color=color)
-                        cv.putText(frame, f"Speed: {vehicle.getSpeed():.2f} m/s", (int(boundingbox[0][0]), int(boundingbox[0][1])), cv.FONT_HERSHEY_SIMPLEX, 0.5,
-                                    (0,255,0), 1, cv.LINE_AA)
-                        
-                        #draw boundingbox set 100ms in future for reference:
-                        num_boxes = 3
-                        for i in range(0, num_boxes):
-                            boundingbox = vehicle.getBoundingBox(cam.current_time + i/num_boxes*end_to_end_delay_s) #TODO: think about which time to use here!
-                            color = (255, 255, max(0, 255-i*100))
+                    try:
+                        if v.color in vehicles.keys():
+                            #compute vehicle actions
+                            target_velocity_mps, target_steering_angle_rad, rays, setpoint = vehicle.compute_next_command(delta_t=end_to_end_delay_s, opponents=virtual_opponents)
+                            vehicle.sendControlsToHardware(target_velocity_mps, target_steering_angle_rad, 0, simulate=True)
+                            #draw outcome.
+                            boundingbox = vehicle.getBoundingBox(cam.current_time) #TODO: think about which time to use here!
+                            color = (0, 255, 0)
+                            if vehicle.ttl < 15:
+                                color = (0, 0, 255)
                             Camera.drawBoundingBox(frame, boundingbox, color=color)
+                            cv.putText(frame, f"Speed: {vehicle.getSpeed():.2f} m/s", (int(boundingbox[0][0]), int(boundingbox[0][1])), cv.FONT_HERSHEY_SIMPLEX, 0.5,
+                                        (0,255,0), 1, cv.LINE_AA)
+                            
+                            #draw boundingbox set 100ms in future for reference:
+                            num_boxes = 3
+                            for i in range(0, num_boxes):
+                                boundingbox = vehicle.getBoundingBox(cam.current_time + (i/(num_boxes-1))*end_to_end_delay_s) #TODO: think about which time to use here!
+                                color = (255, 255, max(0, 255-i*100))
+                                Camera.drawBoundingBox(frame, boundingbox, color=color)
+
+                                x += 1
+                                if x % 60 == 0:
+                                    x = 0
+                                    last_box = boundingbox
+                            if last_box is not None:
+                                Camera.drawBoundingBox(frame, last_box, color=(0,0,255))
+
+                            
+                            #draw lidar rays and setpoint:
+                            if rays is not None:
+                                for ray in rays:
+                                    xy = ray.coords.xy
+                                    cv.line(frame, [int(xy[0][0]), int(xy[1][0])], [int(xy[0][1]), int(xy[1][1])], hueToBGR(Camera.ColorMap[vehicle.color]), 1)
 
                         
-                        #draw lidar rays and setpoint:
-                        if rays is not None:
-                            for ray in rays:
-                                xy = ray.coords.xy
-                                cv.line(frame, [int(xy[0][0]), int(xy[1][0])], [int(xy[0][1]), int(xy[1][1])], hueToBGR(Camera.ColorMap[vehicle.color]), 1)
-
-                    
-                        if setpoint is not None:    
-                            c = [int(setpoint[0]), int(setpoint[1])]
-                            cv.circle(frame, c, radius=5, color=hueToBGR(Camera.ColorMap[vehicle.color]), thickness=5, lineType=1)
+                            if setpoint is not None:    
+                                c = [int(setpoint[0]), int(setpoint[1])]
+                                cv.circle(frame, c, radius=5, color=hueToBGR(Camera.ColorMap[vehicle.color]), thickness=5, lineType=1)
+                    except:
+                        pass
                     
                 cv.imshow('frame', frame)
                 key = cv.waitKey(0)

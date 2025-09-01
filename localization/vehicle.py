@@ -3,6 +3,7 @@ import numpy
 import socket
 import struct
 import time
+import shapely
 
 from .helper_functions import *
 from .pid_controller import PIDController
@@ -101,13 +102,13 @@ class Vehicle:
 
         #find out how fast we can go: TODO: find out more reasonable numbers.
         target_steering_angle_deg = abs(math.degrees(target_steering_angle_rad))
-        if 0 <= target_steering_angle_deg < 5:
-            target_velocity_mps = 2.0
-        if 5 <= target_steering_angle_deg < 10:
+        if 0 <= target_steering_angle_deg < 2:
             target_velocity_mps = 1.2
-        if 10 <= target_steering_angle_deg < 20:
+        if 2 <= target_steering_angle_deg < 5:
+            target_velocity_mps = 1.1
+        if 5 <= target_steering_angle_deg < 10:
             target_velocity_mps = 0.9
-        if 20 <= target_steering_angle_deg < 30:
+        if 10 <= target_steering_angle_deg < 20:
             target_velocity_mps = 0.8
         if 30 <= target_steering_angle_deg:
             target_velocity_mps = 0.7
@@ -115,13 +116,19 @@ class Vehicle:
         #dist to setpoint
         d = math.sqrt((setpoint[0]-x)**2 + (setpoint[1]-y)**2) * (1.0/self.meters_to_pixels)
         if d < 0.6:
-            target_velocity_mps = min(target_velocity_mps, 0.8)
+            target_velocity_mps = min(target_velocity_mps, 0.6)
+        
+        if d < 0.9:
+            target_velocity_mps = min(target_velocity_mps, 1.0)
 
         #debug: limit target_velocity_mps to fixed value
-        #target_velocity_mps = 0.7
+        target_velocity_mps = 0.4
 
 
         self.target_velocity_mps = target_velocity_mps
+
+        if self.getSpeed() > 1.0:
+            target_steering_angle_deg = max(-15, min(15, target_steering_angle_deg)) #if too fast - limit steering angle
 
         return target_velocity_mps, target_steering_angle_rad, rays, setpoint
 
@@ -184,7 +191,7 @@ class Vehicle:
 
         self.speed_filter_values.append(speed)
         self.yaw_filter_values.append(yaw)
-        self.speed_filter_values = self.speed_filter_values[-5:] #keep 5 most recent values
+        self.speed_filter_values = self.speed_filter_values[-15:] #keep 5 most recent values
         self.yaw_filter_values = self.yaw_filter_values[-5:] #keep 5 most recent values
 
         self.x = x
@@ -194,6 +201,7 @@ class Vehicle:
         self.yaw = unwind_angle(get_average_angle(self.yaw_filter_values)) #average
         self.yaw_rate = self.yaw_rate if dt == 0.0 else (self.yaw - old_yaw)/dt
         self.last_update = current_time
+
     
     #returns projected x,y,yaw for time at_time (center of the rear axle)
     #longitudinal_offset_m adds a distance in front of the vehicle (where vehile is the center of the rear axle)
@@ -228,21 +236,37 @@ class Vehicle:
         #add longitudinal offset:
         distance = longitudinal_offset_m * self.meters_to_pixels
         dx, dy = rotate(distance, 0.0, self.yaw)
-        x1 += dx
-        y1 += dy
+
+        #do not add longitudinal offset outside of track boundaries.
+        if not self.lidar.track.pointInsideTrack(shapely.Point(x1+dx,y1+dy)):
+            x1 += dx
+            y1 += dy
 
         #simple linear extrapolation in direction of the vehicle over the history of driving commands.
         for i in range(len(self.command_history)-n, len(self.command_history)):
             speed = self.command_history[i][0]
-            steering_angle = self.command_history[i][1]
+            steering_angle = self.command_history[i][1] * 0.8  #TODO: externalize constant!
             yaw = steering_angle + self.yaw #absolute yaw
             distance = (dt_commands * speed) * self.meters_to_pixels
             dx, dy = rotate(distance, 0.0, unwind_angle(yaw))
+
+            #only extrapolate inside of track boundaries.
+            if not self.lidar.track.pointInsideTrack(shapely.Point(x1+dx,y1+dy)):
+                break
+
             x1 += dx
             y1 += dy
 
             yaw_rate = speed/self.wheel_base_m * math.tan(steering_angle)
             yaw1 += yaw_rate*dt_commands
+
+        #if, for some reason we are stimm outside of the track, set the vehicle back on track.
+        while not self.lidar.track.pointInsideTrack(shapely.Point(x1+dx,y1+dy)):
+            distance = 0.01 * self.meters_to_pixels #set one cm back.
+            dx, dy = rotate(distance, 0.0, self.yaw)
+            x1 -= dx
+            y1 -= dy
+
 
         return x1, y1, unwind_angle(yaw1)
     
@@ -294,7 +318,7 @@ class Vehicle:
     #
     # returns:
     # current_motor_value:          the value just set for the motor
-    def sendControlsToHardware(self, target_velocity_mps:float, target_steering_angle_rad:float, current_motor_value:int):
+    def sendControlsToHardware(self, target_velocity_mps:float, target_steering_angle_rad:float, current_motor_value:int, simulate=False):
 
         #ask PID control what to do with the motor voltage
         delta_motor_value = self.motor_pid.update(target_velocity_mps - self.vehicle_speed)
@@ -310,7 +334,7 @@ class Vehicle:
         #print(f"bounds angle: {math.degrees(target_steering_angle_rad)} - ", end="")
 
         #TODO: think about filtering the steering angle to make it more smooth --> another PID controller for steering?
-        target_steering_angle_rad *= 0.6 # poor man's P controller ;)
+        target_steering_angle_rad *= 0.6#0.6 # poor man's P controller ;)
 
         #convert steering angle to number between 10 and 170 (for some reason...), 90 beeing 0°, 10 beeing max left, 170 max right
         #target_steering_angle_rad can be between -self.max_steering_angle_rad and +self.max_steering_angle_rad
@@ -334,8 +358,10 @@ class Vehicle:
         output = [0, current_motor_value, steering_angle]
         msg = ";".join(f"{e:03}" for e in output)
         
-        self.sock.sendto(bytes(msg, "utf-8"), (self.IP, self.port))
+        if not simulate:
+            self.sock.sendto(bytes(msg, "utf-8"), (self.IP, self.port))
 
-        self.command_history.append( (target_velocity_mps, target_steering_angle_rad) )
+        estimated_speed = target_velocity_mps*0.6+self.getSpeed()*0.4 #somewhere between current and target velocity...
+        self.command_history.append( (estimated_speed, target_steering_angle_rad) )
 
         return current_motor_value

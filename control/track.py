@@ -19,10 +19,8 @@ class Track:
         self.mode = None
 
     def pointInsideTrack(self, point : Point):
-        return self.outerRing.within(point) and not self.innerRing.within(point)
-    
-    def pointInsideTrack(self, x : int, y : int):
-        return self.pointInsideTrack(Point(x, y))
+        return self.polygon.contains(point)
+
 
     def saveToFile(self, filename):
         with open(filename, 'wb') as file:
@@ -43,6 +41,22 @@ class Track:
         try:
             self.innerRing = LinearRing(self.innerBounds)
             self.outerRing = LinearRing(self.outerBounds)
+
+            #test: make inner ring a litte larger:
+            newInnerRing = self.innerRing.buffer(20, single_sided=False).exterior
+            newOuterRing = self.outerRing.buffer(10, single_sided=True).exterior
+            """import matplotlib.pyplot as plt
+            from shapely.plotting import plot_polygon, plot_line
+            fig = plt.figure(1, figsize=(10, 10), dpi=90)
+            ax = fig.add_subplot(111)
+            plot_line(self.innerRing, ax=ax, add_points=False, color="black", linewidth=1)
+            plot_line(self.outerRing, ax=ax, add_points=False, color="black", linewidth=1)
+            plot_line(newInnerRing, ax=ax, add_points=False, color="red", linewidth=1)
+            plot_line(newOuterRing, ax=ax, add_points=False, color="blue", linewidth=1)
+            plt.show()"""
+            self.innerRing = newInnerRing
+            self.outerRing = newOuterRing
+
 
         except Exception as e:
             print(f"Failure generating linear ring: {e}")

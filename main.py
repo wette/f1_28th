@@ -16,35 +16,8 @@ import copy
 import collections
 
 
-#ip addresses of vehicles
-vehicles = {
-        "orange": {
-            "ip": "10.134.137.90", 
-            "port": 6446,
-            "motor_pid": (20, 0, 0.01),    #PID parameters to control the motor
-            "length_m": 0.18,           #vehicle length
-            "width_m":  0.08,           #vehicle width
-            "rear_axle_offset_m" : 0.065, #rear-center offset of the center of rear axle (where the black Dot on the vehicle is)
-            "max_steering_angle_deg": 45,
-            "steering_angle_offset_deg": 0.0,
-            "lidar_field_of_view_deg": 80, 
-            "lidar_numRays": 50, 
-            "lidar_rayLength_m" : 1.0
-        },
-        "green": {
-            "ip": "10.134.137.41", 
-            "port": 6446,
-            "motor_pid": (20, 0, 0),         #PID parameters to control the motor
-            "length_m": 0.18,           #vehicle length
-            "width_m":  0.08,           #vehicle width
-            "rear_axle_offset_m" : 0.065, #rear-center offset of the center of rear axle (where the black Dot on the vehicle is)
-            "max_steering_angle_deg": 40,
-            "steering_angle_offset_deg": 0.0,
-            "lidar_field_of_view_deg": 140, 
-            "lidar_numRays": 140, 
-            "lidar_rayLength_m" : 1.0
-        },
-}
+#ip addresses and parameters of vehicles
+from vehicle_config import vehicles
 
 #camera parameters
 vertical_resolution_px = 1200
@@ -55,7 +28,7 @@ opening_angle_horizontal_degrees = 126.0
 
 #physical parameters of camera and vehicle features
 meters_to_pixels = 681     #how many pixels are in one meter?
-max_speed_vehicle_mps = 4.0        #max speed of a car in meters per second
+max_speed_vehicle_mps = 5.0        #max speed of a car in meters per second
 minimum_brightness = 1.0 #2.7   #used to brighten the image of the webcam
 threshold_brightness_of_black = 150       #rgb from 0-255
 threshold_brightness_of_white = 200        #rgb from 0-255
@@ -195,6 +168,10 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
     current_motor_value = 0
     pid_control_motor : PIDController = None  #we need to store the motor pid in the process as our copy of the vehicle it not synchronized back to the other processes.
     command_history = None
+
+    #end-to-end-delay
+    end_to_end_delay_s = 0.17#0.13
+
     while d["raceEnabled"]:
         start_time = time.time()
 
@@ -230,7 +207,7 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
         v.command_frequency_hz = target_control_frequency
 
         #compute vehicle actions
-        target_velocity_mps, target_steering_angle_rad, rays, setpoint = v.compute_next_command(delta_t=0.1, opponents=opponents)
+        target_velocity_mps, target_steering_angle_rad, rays, setpoint = v.compute_next_command(delta_t=end_to_end_delay_s, opponents=opponents)
 
 
         #send actions to vehicle
