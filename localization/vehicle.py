@@ -47,6 +47,8 @@ class Vehicle:
         #vehicle dimensions in pixels
         self.length_px = 0.18 * self.meters_to_pixels
         self.width_px = 0.08 * self.meters_to_pixels
+        
+        self.wheel_base_m = 0.094 #TODO: externalize!
 
         #rear-center offset of the center of rear axle (where the black Dot on the vehicle is)
         self.rear_axle_offset_px = 0.065 * self.meters_to_pixels
@@ -60,7 +62,11 @@ class Vehicle:
         self.longitudinal_speed_mps = 0
 
         self.speed_filter_values = [] #history of speed values to filter
+        self.yaw_filter_values = [] #history of yaw values to filter
         self.yaw_rate_filter_values = [] #history of yaw rate values to filter
+
+        self.command_history = [] #history of the issued driving commands
+        self.command_frequency_hz = 40.0 #TODO: externalize!
 
         #timekeeping
         self.is_on_finish_line = False
@@ -71,9 +77,9 @@ class Vehicle:
 
         self.ttl = 5
 
-    def compute_next_command(self, delta_t : float):
-        x, y, yaw = self.getPositionEstimate(self.last_update + delta_t, longitudinal_offset_m=0.03) #TODO: find out which delta is required here!
-        distances, rays = self.lidar.getReadings(x, y, yaw)
+    def compute_next_command(self, delta_t : float, opponents : list['Vehicle'] = []):
+        x, y, yaw = self.getPositionEstimateCommandHistory(self.last_update + delta_t, longitudinal_offset_m=0.03) #TODO: find out which delta is required here!
+        distances, rays = self.lidar.getReadings(x, y, yaw, opponents = opponents)
 
         
         #TODO: this is not very clean as this code is assuming the controler is a disparity extender
@@ -141,11 +147,9 @@ class Vehicle:
         dx = x - self.x
         dy = y - self.y
         dt = current_time - self.last_update
-        yaw_rate_rad_per_sec = 0.0
         dist = math.sqrt(dx**2 + dy**2)
         if dt > 0:
             speed = dist / dt
-            yaw_rate_rad_per_sec = unwind_angle(yaw - self.yaw) / dt
         else:
             speed = self.vehicle_speed
 
@@ -179,15 +183,16 @@ class Vehicle:
             self.longitudinal_speed_mps = mx / dt
 
         self.speed_filter_values.append(speed)
-        self.yaw_rate_filter_values.append(yaw_rate_rad_per_sec)
+        self.yaw_filter_values.append(yaw)
         self.speed_filter_values = self.speed_filter_values[-5:] #keep 5 most recent values
-        self.yaw_rate_filter_values = self.yaw_rate_filter_values[-5:] #keep 5 most recent values
+        self.yaw_filter_values = self.yaw_filter_values[-5:] #keep 5 most recent values
 
         self.x = x
         self.y = y
         self.vehicle_speed = sum(self.speed_filter_values) / len(self.speed_filter_values) #average
-        self.yaw_rate = sum(self.yaw_rate_filter_values) / len(self.yaw_rate_filter_values) #average
-        self.yaw = yaw
+        old_yaw = self.yaw
+        self.yaw = unwind_angle(get_average_angle(self.yaw_filter_values)) #average
+        self.yaw_rate = self.yaw_rate if dt == 0.0 else (self.yaw - old_yaw)/dt
         self.last_update = current_time
     
     #returns projected x,y,yaw for time at_time (center of the rear axle)
@@ -205,18 +210,49 @@ class Vehicle:
         y1 = self.y + dy
         yaw1 = unwind_angle(self.yaw + self.yaw_rate*dt)
 
-        if dt > 1:
-            print(self.x, self.y, self.yaw, self.yaw_rate, dt, self.vehicle_speed, "-->", x1, y1, yaw1)
-
         return x1, y1, yaw1
+    
+#returns projected x,y,yaw for time at_time (center of the rear axle)
+    #dt_commands = time between two sent driving commands
+    def getPositionEstimateCommandHistory(self, at_time, longitudinal_offset_m=0.0):
+        dt_commands = 1.0/self.command_frequency_hz
+
+        dt = at_time - self.last_update
+        x1, y1, yaw1 = self.x, self.y, self.yaw
+
+        n = int(dt/dt_commands)
+
+        if n >= len(self.command_history):
+            return self.getPositionEstimate(at_time, longitudinal_offset_m)
+        
+        #add longitudinal offset:
+        distance = longitudinal_offset_m * self.meters_to_pixels
+        dx, dy = rotate(distance, 0.0, self.yaw)
+        x1 += dx
+        y1 += dy
+
+        #simple linear extrapolation in direction of the vehicle over the history of driving commands.
+        for i in range(len(self.command_history)-n, len(self.command_history)):
+            speed = self.command_history[i][0]
+            steering_angle = self.command_history[i][1]
+            yaw = steering_angle + self.yaw #absolute yaw
+            distance = (dt_commands * speed) * self.meters_to_pixels
+            dx, dy = rotate(distance, 0.0, unwind_angle(yaw))
+            x1 += dx
+            y1 += dy
+
+            yaw_rate = speed/self.wheel_base_m * math.tan(steering_angle)
+            yaw1 += yaw_rate*dt_commands
+
+        return x1, y1, unwind_angle(yaw1)
     
     #returns coordinates of a boundingbox of the vehicle.
     #at at_time is not None: projected into future.
     def getBoundingBox(self, at_time = None):
         pos_x, pos_y = self.getPosition()
-        yaw = self.getOrientation
+        yaw = self.getOrientation()
         if at_time is not None:
-            pos_x, pos_y, yaw = self.getPositionEstimate(at_time)
+            pos_x, pos_y, yaw = self.getPositionEstimateCommandHistory(at_time)
 
         #define boundingbox in vehicle coordinate system (vehicle drives along x axis)
         bottom_left  = numpy.array([ -self.rear_axle_offset_px, int(-self.width_px/2) ])
@@ -299,5 +335,7 @@ class Vehicle:
         msg = ";".join(f"{e:03}" for e in output)
         
         self.sock.sendto(bytes(msg, "utf-8"), (self.IP, self.port))
+
+        self.command_history.append( (target_velocity_mps, target_steering_angle_rad) )
 
         return current_motor_value

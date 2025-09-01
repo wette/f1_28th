@@ -509,8 +509,8 @@ class Camera:
                 
             cv.line(frame, [int(x) for x in from_pt], [int(x) for x in to_pt], color)
 
-    def trackVehicles(self):
-
+    #if in simulation, use dt for the inter frame time of the camera (1.0/fps) to be independent of the actual walltime.
+    def trackVehicles(self, dt=None):
     
         # Capture frame-by-frame
         frame = self.get_frame(initializeColorCorrection=False)
@@ -518,7 +518,11 @@ class Camera:
             print("End-of-Stream detected. Stop tracking!")
             self.video_stream_active = False
             return
-        self.current_time = time.time()
+        
+        if dt is not None:
+            self.current_time += dt
+        else:
+            self.current_time = time.time()
 
         if self.DEBUG: print("new frame -----------------------")
 

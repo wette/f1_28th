@@ -137,20 +137,28 @@ def main():
             while len(cam.tracked_vehicles) > 0:
                 
                 #update position of each vehicle
-                cam.trackVehicles()
+                cam.trackVehicles(dt=delta_t)
 
                 cam.checkFinishLine(top_left=(1000, 950), bottom_right=(1050, 1120))
 
                 #send frame and currently tracked vehicles to other processes
                 frame = cam.get_last_frame()
 
+                #end-to-end-delay
+                end_to_end_delay_s = 0.1
+
+                #virtual opponents
+                op = Vehicle(1000, 500, math.radians(-70), meters_to_pixels)
+                op.setPhysicalProperties(0.18, 0.08, 0.04, 40, 0)
+                virtual_opponents = [op]
+
                 for vehicle in cam.tracked_vehicles:
                     if v.color in vehicles.keys():
                         #compute vehicle actions
-                        target_velocity_mps, target_steering_angle_rad, rays, setpoint = vehicle.compute_next_command(delta_t=0.3)
+                        target_velocity_mps, target_steering_angle_rad, rays, setpoint = vehicle.compute_next_command(delta_t=end_to_end_delay_s, opponents=virtual_opponents)
 
                         #draw outcome.
-                        boundingbox = vehicle.getBoundingBox(time.time()) #TODO: think about which time to use here!
+                        boundingbox = vehicle.getBoundingBox(cam.current_time) #TODO: think about which time to use here!
                         color = (0, 255, 0)
                         if vehicle.ttl < 15:
                             color = (0, 0, 255)
@@ -159,9 +167,11 @@ def main():
                                     (0,255,0), 1, cv.LINE_AA)
                         
                         #draw boundingbox set 100ms in future for reference:
-                        boundingbox = vehicle.getBoundingBox(time.time()+0.3) #TODO: think about which time to use here!
-                        color = (255, 255, 255)
-                        Camera.drawBoundingBox(frame, boundingbox, color=color)
+                        num_boxes = 3
+                        for i in range(0, num_boxes):
+                            boundingbox = vehicle.getBoundingBox(cam.current_time + i/num_boxes*end_to_end_delay_s) #TODO: think about which time to use here!
+                            color = (255, 255, max(0, 255-i*100))
+                            Camera.drawBoundingBox(frame, boundingbox, color=color)
 
                         
                         #draw lidar rays and setpoint:

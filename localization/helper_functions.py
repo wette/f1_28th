@@ -27,13 +27,30 @@ def hueToBGR(h: float):
     color = cv.cvtColor(np.uint8([[np.array([int(h), 255,  255], dtype=np.uint8)]]), cv.COLOR_HSV2BGR)
     return int(color[0][0][0]), int(color[0][0][1]), int(color[0][0][2])
 
-def unwind_angle(alpha_rad : float) -> float:
-    while alpha_rad < -math.pi:
+#shift angle in range [-pi, +pi]
+def unwind_angle(alpha_rad : float, start=-math.pi, end=math.pi) -> float:
+    while alpha_rad < start:
         alpha_rad += math.pi*2
-    while alpha_rad > math.pi:
+    while alpha_rad > end:
         alpha_rad -= math.pi*2
     
     return alpha_rad
+
+def get_average_angle(angles_rad: float) -> float:
+    x = 0.0
+    y = 0.0
+    for alpha in angles_rad:
+        x += math.cos(alpha)
+        y += math.sin(alpha)
+    average_angle_rad = -1*math.atan2(x,y)  + math.pi/2.0
+    return average_angle_rad
+
+def difference_in_angle(alpha_rad, beta_rad):
+    alpha_rad = unwind_angle(alpha_rad, 0, 2*math.pi)
+    beta_rad = unwind_angle(beta_rad, 0, 2*math.pi)
+    diff = abs(alpha_rad-beta_rad)
+    diff_alt = 2*math.pi - diff
+    return unwind_angle(min(diff, diff_alt), -math.pi, math.pi)
 
 def createPlot(frame, 
                plot_x:int, 

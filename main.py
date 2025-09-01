@@ -194,15 +194,21 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
     loop_time_s = 1.0 / target_control_frequency
     current_motor_value = 0
     pid_control_motor : PIDController = None  #we need to store the motor pid in the process as our copy of the vehicle it not synchronized back to the other processes.
+    command_history = None
     while d["raceEnabled"]:
         start_time = time.time()
 
-        #look for the vehicle with our color:
-        v : Vehicle = None
+        #look for the vehicle with our color and out opponents:
+        opponents : list[Vehicle] = []
+        v         : Vehicle       = None
+
         for x in d["vehicles"]:
             if x.color == vehicleColor:
                 v = x
-                break
+            else:
+                opponents.append(x)
+        
+        
         
         if v is None:
             #print(f"Skipping controlVehicleThread for the {vehicleColor} vehicle as it is no longer found on the racetrack.")
@@ -215,9 +221,16 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
             pid_control_motor = v.motor_pid
         else:
             v.motor_pid = pid_control_motor #put in our local copy of the pid controller.
+        
+        if command_history is None:
+            command_history = v.command_history #put in our local copy of the command history
+        else:
+            v.command_history = command_history
+        
+        v.command_frequency_hz = target_control_frequency
 
         #compute vehicle actions
-        target_velocity_mps, target_steering_angle_rad, rays, setpoint = v.compute_next_command(delta_t=0.1)
+        target_velocity_mps, target_steering_angle_rad, rays, setpoint = v.compute_next_command(delta_t=0.1, opponents=opponents)
 
 
         #send actions to vehicle

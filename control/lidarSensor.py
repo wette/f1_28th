@@ -1,7 +1,6 @@
 from .track import Track
 import numpy as np
 import shapely
-from localization.helper_functions import rotate
 
 class LidarSensor:
     def __init__(self, track: Track, field_of_view_deg: float, numRays: int, rayLength_px: int):
@@ -29,14 +28,19 @@ class LidarSensor:
 
         return rays
     
-    def __computeIntersectionsWithTrack(self, rays, x, y):
+    def __computeIntersectionsWithTrack(self, rays, x, y, opponents : list['Vehicle'] = []):
         distances = []
         vehicleLocation = shapely.Point(int(x), int(y))
         intersectedRays = []
+
+        obstacles = [self.track.innerRing, self.track.outerRing]
+        for v in opponents:
+            obstacles.append(shapely.Polygon(v.getBoundingBox()))
+
         for ray in rays:
             dist = []
             intray = []
-            for bound in [self.track.innerRing, self.track.outerRing]:
+            for bound in obstacles:
                 intersection = bound.intersection(ray)
                 if intersection.is_empty:
                     dist.append(self.rayLength)
@@ -57,12 +61,13 @@ class LidarSensor:
     #Compute Lidar Rays and length w.r.t. the racetrack.
     # Inputs:  xPos, yPos: Position of the vehicle
     #          angle:      yaw-angle of the vehicle
+    #          opponents: other vehicles which can be detected by the lidar
     #
     # Outputs: distances:           distance readings w.r.t. the racetrack -> list of floats
     #          intersectedRays:     the rays sent out by the lidar -> list of shapely.LineString objects
-    def getReadings(self, xPos:int, yPos:int, angle:float):
+    def getReadings(self, xPos:int, yPos:int, angle:float, opponents : list['Vehicle'] = []):
         rays = self.__generateRays(xPos, yPos, angle)
-        distances, intersectedRays = self.__computeIntersectionsWithTrack(rays, xPos, yPos)
+        distances, intersectedRays = self.__computeIntersectionsWithTrack(rays, xPos, yPos, opponents)
 
         return distances, intersectedRays
 
