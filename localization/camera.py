@@ -12,8 +12,7 @@ class Camera:
                 "blue"  : 240/2,
                 "yellow" : 60/2,
                 "red"    : 360/2,
-                "orange" : 30/2,
-                
+                #"orange" : 30/2,
                 }
     
     def __init__(self,
@@ -311,29 +310,28 @@ class Camera:
 
         return xPos - correction_x_px, yPos - correction_y_px
 
-
-    
-    def updateVehiclePosition(self, xPos : int, yPos : int, yaw : float, color: str, detect_new_vehicles: bool = True):
+    def updateVehiclePosition(self, xPos : int, yPos : int, yaw : float, vehicle: Vehicle = None, detect_new_vehicles: bool = True, color: str = None):
         threshold = (self.max_speed_vehicle_mps * self.meters_to_pixels) / self.frames_per_seconds
-        found_vehicle = None
-        nearest_vehicle = None
-        for v in self.tracked_vehicles:
-            if distance( (xPos, yPos), list(v.getPosition()) ) < threshold and \
-                (abs((v.getOrientation() - yaw)) < 0.3 or\
-                abs((v.getOrientation() - yaw)) > (2*math.pi - 0.3)):
 
-                if nearest_vehicle is None or \
-                        distance(list(v.getPosition()), (xPos, yPos)) < distance(list(nearest_vehicle.getPosition()), (xPos, yPos)):
-                    nearest_vehicle = v
-        
-        found_vehicle = nearest_vehicle
-        
-        if found_vehicle is not None:
-            found_vehicle.updatePose(xPos, yPos, yaw, self.current_time)
-            if self.DEBUG: print("Updating pose of vehicle to: ", xPos, yPos, yaw)
-            return True
+        if vehicle is not None:
+            if distance( (xPos, yPos), list(vehicle.getPosition()) ) < threshold and \
+                (abs((vehicle.getOrientation() - yaw)) < 0.3 or abs((vehicle.getOrientation() - yaw)) > (2*math.pi - 0.3)):
+
+                vehicle.updatePose(xPos, yPos, yaw, self.current_time)
+                return True
         else:
             if detect_new_vehicles:
+                #only detect new vehicle if far away from other vehicles:
+                min_dist_px = 0.1 * self.meters_to_pixels
+                d = None
+                for v in self.tracked_vehicles:
+                    dist = distance(list(v.getPosition()), (xPos, yPos))
+                    if d is None or d > dist:
+                        d = dist
+
+                if d is not None and d < min_dist_px:
+                    return False
+                
                 vehicle = Vehicle(xPos, yPos, yaw, self.meters_to_pixels)
                 vehicle.color = color
                 if self.DEBUG: print(f"Found new Vehicle at {vehicle.getPosition()}, yaw angle {math.degrees(vehicle.getOrientation())}")
@@ -394,13 +392,15 @@ class Camera:
         if 0 < x < frame.shape[1] and 0 < y < frame.shape[0]:
                 color = frame[y,x]
                 color_hsv = cv.cvtColor(np.uint8([[color]]), cv.COLOR_BGR2HSV)
-                hue = color_hsv[0][0][0]
+                hue = float(color_hsv[0][0][0])
                 threshold = 20
                 for name, val in Camera.ColorMap.items():
-                    lo = val-threshold
-                    hi = val+threshold
+                    #check for modulo 180 in range...
+                    diff = abs(val-hue)
+                    if diff > 180/2:
+                        diff = 180-diff
 
-                    if lo < hue < hi or lo < hue-180 < hi:  #check for modulo 180 in range...
+                    if diff < threshold:  
                         return name
                     
                 print(f"Error: Could not figure out which color the vehicle has: {color} (hue {hue}) at ({x},{y})")
@@ -602,13 +602,14 @@ class Camera:
                                 black = dot2.copy()
                                 white = dot1.copy()
 
+
                             #correct for height
                             black[0], black[1] = self.correctForHeightOfVehicle(black[0]+x_offset, black[1]+y_offset, self.height_over_ground_black_meters)
                             white[0], white[1] = self.correctForHeightOfVehicle(white[0]+x_offset, white[1]+y_offset, self.height_over_ground_white_meters)
 
                             
                             if not updatedVehicle:
-                                updatedVehicle = self.updateVehiclePosition(black[0], black[1], getyaw(black, white), color=None, detect_new_vehicles=False)
+                                updatedVehicle = self.updateVehiclePosition(black[0], black[1], getyaw(black, white), vehicle=vehicle, detect_new_vehicles=False)
                         else:
                             if self.DEBUG: print(f"too far apart: {distance(dot1, dot2)} px does not meet threshold {self.size_between_black_and_white_center_px}")
             
