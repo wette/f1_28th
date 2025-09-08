@@ -34,7 +34,7 @@ vehicles = {
             "width_m":  0.08,           #vehicle width
             "rear_axle_offset_m" : 0.065, #rear-center offset of the center of rear axle (where the black Dot on the vehicle is)
             "max_steering_angle_deg": 40,
-            "steering_angle_offset_deg": 0.0,
+            "steering_angle_offset_deg": 10.0,
             "lidar_field_of_view_deg": 140, 
             "lidar_numRays": 70, 
             "lidar_rayLength_m" : 1.0

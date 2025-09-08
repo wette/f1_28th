@@ -106,23 +106,23 @@ class Vehicle:
         #find out how fast we can go: TODO: find out more reasonable numbers.
         target_steering_angle_deg = abs(math.degrees(target_steering_angle_rad))
         if 0 <= target_steering_angle_deg < 2:
-            target_velocity_mps = 1.2
+            target_velocity_mps = 1.5
         if 2 <= target_steering_angle_deg < 5:
-            target_velocity_mps = 1.2
+            target_velocity_mps = 1.3
         if 5 <= target_steering_angle_deg < 10:
-            target_velocity_mps = 1.0
+            target_velocity_mps = 1.1
         if 10 <= target_steering_angle_deg < 20:
-            target_velocity_mps = 0.8
+            target_velocity_mps = 0.9
         if 30 <= target_steering_angle_deg:
-            target_velocity_mps = 0.6
+            target_velocity_mps = 0.8
 
         #dist to setpoint
         d = math.sqrt((setpoint[0]-x)**2 + (setpoint[1]-y)**2) * (1.0/self.meters_to_pixels)
-        if d < 0.3:
-            target_velocity_mps = min(target_velocity_mps, 0.6)
+        if d < 0.15:
+            target_velocity_mps = min(target_velocity_mps, 0.8)
         
-        if d < 0.7:
-            target_velocity_mps = min(target_velocity_mps, 1.0)
+        """if d < 0.7:
+            target_velocity_mps = min(target_velocity_mps, 1.0)"""
 
         #debug: limit target_velocity_mps to fixed value
         #target_velocity_mps = 0.6
@@ -342,6 +342,9 @@ class Vehicle:
 
         #TODO: think about filtering the steering angle to make it more smooth --> another PID controller for steering?
         target_steering_angle_rad *= 0.6#0.6 # poor man's P controller ;)
+
+        #apply offset as given in the vehicle config:
+        target_steering_angle_rad += self.servo_offset
 
         #convert steering angle to number between 10 and 170 (for some reason...), 90 beeing 0°, 10 beeing max left, 170 max right
         #target_steering_angle_rad can be between -self.max_steering_angle_rad and +self.max_steering_angle_rad
