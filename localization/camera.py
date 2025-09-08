@@ -519,6 +519,7 @@ class Camera:
 
     #if in simulation, use dt for the inter frame time of the camera (1.0/fps) to be independent of the actual walltime.
     def trackVehicles(self, dt=None, colorCorrect=False):
+
     
         # Capture frame-by-frame
         frame = self.get_frame(initializeColorCorrection=False, colorCorrect=colorCorrect)
@@ -559,7 +560,8 @@ class Camera:
                 continue
 
 
-            #subimage_color = self.colorCorrectImage(subimage, initializeRatio=False)
+            subimage = self.colorCorrectImage(subimage, initializeRatio=False)
+
             subimage_color = subimage
 
             subimage_color = cv.medianBlur(subimage_color, 5)
@@ -629,7 +631,6 @@ class Camera:
                     black, white = nearest_found_pair
                     updatedVehicle = self.updateVehiclePosition(black[0], black[1], getyaw(black, white), vehicle=vehicle, detect_new_vehicles=False)
                 
-            
             if not updatedVehicle:
                 print(f"did not find vehicle at {vehicle.getPosition()}, yaw: {vehicle.getOrientation()}")
                 #we lost a vehicle!
@@ -648,8 +649,9 @@ class Camera:
             #show portion of image which we used
             #frame[y_offset:y_offset+subimage_color.shape[0], x_offset:x_offset+subimage_color.shape[1]] = subimage_color
 
-        time_for_one_pass = time.time() - self.time_end
-        self.time_end = time.time()
+        now = time.time()
+        time_for_one_pass = now - self.time_end
+        self.time_end = now
         #debug info
 
 
@@ -671,7 +673,7 @@ class Camera:
             cv.putText(frame, f"Localization frequency: {sum(self.fps_buffer)/len(self.fps_buffer):.1f} Hz", (50, 50), cv.FONT_HERSHEY_SIMPLEX, 0.7,
                         (0,255,0), 1, cv.LINE_AA)
 
-        #print(f"Procesing time: {(time_end-time_start)*1000}ms")
+        
         # Display the resulting frame
         """cv.imshow('frame', frame)
         if cv.waitKey(1) == ord('q'):

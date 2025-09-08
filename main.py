@@ -10,6 +10,7 @@ import numpy as np
 import math
 
 from multiprocessing import Process, Manager
+from multiprocessing.shared_memory import SharedMemory
 import cv2 as cv
 import time
 import copy
@@ -59,9 +60,13 @@ def showImageThread(d: dict, track: Track):
         history_plot_lateral_speed[color] = collections.deque(maxlen=100)
         history_plot_lateral_acceleration[color] = collections.deque(maxlen=100)
 
+    #connect to shared memory
+    shm = SharedMemory(name="frame")
+
     while d["showVisualization"]:
-        frame                    = d["frame"]
         vehicles :list[Vehicle]  = d["vehicles"]
+
+        frame = np.ndarray((vertical_resolution_px, horizontal_resolution_px, 3), dtype=np.uint8, buffer=shm.buf).copy()
 
         if frame is not None:
             #draw control loop frequency:
@@ -173,6 +178,8 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
     #end-to-end-delay
     end_to_end_delay_s = 0.15 #0.15
 
+    smooth_start_time = time.time()
+
     while d["raceEnabled"]:
         start_time = time.time()
 
@@ -210,6 +217,9 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
         #compute vehicle actions
         target_velocity_mps, target_steering_angle_rad, rays, setpoint = v.compute_next_command(delta_t=end_to_end_delay_s, opponents=opponents)
 
+        #start smoothly:
+        if time.time() - smooth_start_time < 1.0:
+            target_velocity_mps = 0.6
 
         #send actions to vehicle
         current_motor_value = v.sendControlsToHardware(target_velocity_mps=target_velocity_mps,
@@ -279,13 +289,18 @@ def main():
 
 
     # create manager object for multiprocessing - used for inter-process communication
-    # all processes can reead and write to this dict.
+    # all processes can read and write to this dict.
     manager = Manager()
     d = manager.dict()
-    d["frame"] = None
     d["vehicles"] = []
     d["showVisualization"] = True
     d["raceEnabled"] = True
+
+    #create shared memory for the last image of the camera (because its faster than the manager!)
+    last_frame = cam.get_frame()
+    print(last_frame.shape)
+    shm = SharedMemory(name="frame", create=True, size=last_frame.nbytes)
+    shared_memory_buffer = np.ndarray(last_frame.shape, dtype=np.uint8, buffer=shm.buf)
 
 
     #spawn one process for visualization:
@@ -343,8 +358,9 @@ def main():
                 cam.checkFinishLine(top_left=(1000, 950), bottom_right=(1050, 1120))
 
                 #send frame and currently tracked vehicles to other processes
-                d["frame"] = cam.get_last_frame()
+                shared_memory_buffer[:] = cam.get_last_frame()[:]
                 d["vehicles"] = [copy.copy(v) for v in cam.tracked_vehicles]
+
 
                 #this is now done in processes
                 """for v in cam.tracked_vehicles:
@@ -368,6 +384,9 @@ def main():
     process_visualization.join()
     for k in control_processes.keys():
         control_processes[k].join()
+
+    shm.close()
+    shm.unlink()
 
 
 

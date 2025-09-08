@@ -33,6 +33,9 @@ class Vehicle:
         self.motor_pid = None
         self.target_velocity_mps = 0
 
+        #for filtering steering control
+        self.target_steering_angle_rad = 0.0
+
         #reference to contoroller
         self.controller = None
 
@@ -98,37 +101,41 @@ class Vehicle:
 
 
         #compute target velocity
-        target_velocity_mps = 0.5
+        target_velocity_mps = 0.6
 
         #find out how fast we can go: TODO: find out more reasonable numbers.
         target_steering_angle_deg = abs(math.degrees(target_steering_angle_rad))
         if 0 <= target_steering_angle_deg < 2:
             target_velocity_mps = 1.2
         if 2 <= target_steering_angle_deg < 5:
-            target_velocity_mps = 1.1
+            target_velocity_mps = 1.2
         if 5 <= target_steering_angle_deg < 10:
-            target_velocity_mps = 0.9
+            target_velocity_mps = 1.0
         if 10 <= target_steering_angle_deg < 20:
             target_velocity_mps = 0.8
         if 30 <= target_steering_angle_deg:
-            target_velocity_mps = 0.7
+            target_velocity_mps = 0.6
 
         #dist to setpoint
         d = math.sqrt((setpoint[0]-x)**2 + (setpoint[1]-y)**2) * (1.0/self.meters_to_pixels)
-        if d < 0.6:
+        if d < 0.3:
             target_velocity_mps = min(target_velocity_mps, 0.6)
         
-        if d < 0.9:
+        if d < 0.7:
             target_velocity_mps = min(target_velocity_mps, 1.0)
 
         #debug: limit target_velocity_mps to fixed value
-        target_velocity_mps = 0.4
+        #target_velocity_mps = 0.6
 
 
         self.target_velocity_mps = target_velocity_mps
 
+        #smoothing out steering angle.
+        #target_steering_angle_rad = 0.7*target_steering_angle_rad + 0.3*self.target_steering_angle_rad
+        self.target_steering_angle_rad = target_steering_angle_rad
+
         if self.getSpeed() > 1.0:
-            target_steering_angle_deg = max(-15, min(15, target_steering_angle_deg)) #if too fast - limit steering angle
+            target_steering_angle_deg = max(-15, min(15, target_steering_angle_deg)) #if too fast - limit steering angle to +/- 15°
 
         return target_velocity_mps, target_steering_angle_rad, rays, setpoint
 
@@ -324,7 +331,7 @@ class Vehicle:
         delta_motor_value = self.motor_pid.update(target_velocity_mps - self.vehicle_speed)
         current_motor_value += delta_motor_value
 
-        current_motor_value = int(max(80, min(180, current_motor_value))) #clip between 80 and 240 - keep a minimum motor value to prevent the vehicle from getting stuck.
+        current_motor_value = int(max(80, min(200, current_motor_value))) #clip between 80 and 240 - keep a minimum motor value to prevent the vehicle from getting stuck.
         
         
         #print(f"unwound angle: {math.degrees(target_steering_angle_rad)} - ", end="")
