@@ -133,7 +133,8 @@ class Camera:
         frame = cv.remap(frame, self.remapX, self.remapY, cv.INTER_LINEAR)
 
         #color correct the image
-        frame = self.colorCorrectImage(frame, initializeRatio=initializeColorCorrection)
+        if colorCorrect:
+            frame = self.colorCorrectImage(frame, initializeRatio=initializeColorCorrection)
 
         return frame
 
@@ -314,6 +315,7 @@ class Camera:
         threshold = (self.max_speed_vehicle_mps * self.meters_to_pixels) / self.frames_per_seconds
 
         if vehicle is not None:
+            #check if what we found is remotely near the vehicle we want to update
             if distance( (xPos, yPos), list(vehicle.getPosition()) ) < threshold and \
                 (abs((vehicle.getOrientation() - yaw)) < 0.3 or abs((vehicle.getOrientation() - yaw)) > (2*math.pi - 0.3)):
 
@@ -321,7 +323,7 @@ class Camera:
                 return True
         else:
             if detect_new_vehicles:
-                #only detect new vehicle if far away from other vehicles:
+                #only detect new vehicle ifs "far" away from other vehicles:
                 min_dist_px = 0.1 * self.meters_to_pixels
                 d = None
                 for v in self.tracked_vehicles:
@@ -449,7 +451,7 @@ class Camera:
 
                 #black_dots, white_dots, frame = self.classifyDotsFromCircles(circles, frame)
 
-                #find a black circle which is close to a white one:
+                #find all darker ("black") circles which is close to a white one
                 threshold = 0.4
                 for dot1 in circles:
                     #cv.circle(frame, (dot1[0], dot1[1]), dot1[2], (0, 0, 0), 4)
@@ -516,10 +518,10 @@ class Camera:
             cv.line(frame, [int(x) for x in from_pt], [int(x) for x in to_pt], color)
 
     #if in simulation, use dt for the inter frame time of the camera (1.0/fps) to be independent of the actual walltime.
-    def trackVehicles(self, dt=None):
+    def trackVehicles(self, dt=None, colorCorrect=False):
     
         # Capture frame-by-frame
-        frame = self.get_frame(initializeColorCorrection=False, colorCorrect=False)
+        frame = self.get_frame(initializeColorCorrection=False, colorCorrect=colorCorrect)
         if frame is None:
             print("End-of-Stream detected. Stop tracking!")
             self.video_stream_active = False
@@ -546,6 +548,7 @@ class Camera:
             #estimate image boundaries where to search for the vehicle
             #there will probably be an offset which we need to track to convert back to full-image-coordinates
             boundingbox = vehicle.getBoundingBox(self.current_time + 1.0/self.frames_per_seconds)
+            predicted_vehicle_position = vehicle.getPositionEstimate(self.current_time + 1.0/self.frames_per_seconds)
 
             subimage, x_offset, y_offset = self.getSubimageFromPoints(boundingbox, frame)
 
@@ -566,7 +569,7 @@ class Camera:
             # detect circles in the subimage
             circles = cv.HoughCircles(subimage_gray, cv.HOUGH_GRADIENT_ALT, 1.2, minDist=20, param1=300, param2=0.8, minRadius=int((self.circle_diameter_px/2.0)*0.5), maxRadius=int((self.circle_diameter_px/2.0)*3))
             
-            # ensure at least some circles were found
+            # find matching pairs of circles
             if circles is not None:
                 # convert the (x, y) coordinates and radius of the circles to integers
                 circles = np.round(circles[0, :]).astype("int")
@@ -578,22 +581,25 @@ class Camera:
                 #black_dots, white_dots, subimage_color = self.classifyDotsFromCircles(circles, subimage_color)
                 #if self.DEBUG: print(f"Detected {len(black_dots)} black, and {len(white_dots)} white circles.")
 
-                #find a black circle which is close to a white one:
-                threshold = 0.4
+                #find a darker ("black") circle which is close to a white one
+                #decide on the pair that is closest to the known position of the vehicle and update its position accordingly.
+                nearest_found_pair = None
+                nearest_found_distance = None
+                threshold = 0.4                 #TODO: threshold could be much tighter, if first height of vehice is corrected for!
                 for dot1 in circles:
-                    #cv.circle(subimage_color, (dot1[0], dot1[1]), dot1[2], (0, 0, 0), 4)
                     for dot2 in circles:
                         if dot1[0] == dot2[0] and dot1[1] == dot2[1] :
                             continue
                         minDist = self.size_between_black_and_white_center_px * (1-threshold)
                         maxDist = self.size_between_black_and_white_center_px * (1+threshold)
+
                         if minDist < distance(dot1, dot2) < maxDist:
                             #black and white match: we found a vehicle.
                             color1 = subimage_gray[dot1[1],dot1[0]]
                             color2 = subimage_gray[dot2[1],dot2[0]]
 
                             if abs(int(color1) -int(color2)) < 30:
-                                #two circles of same color
+                                #two circles of same color - did NOT find a vehicle...
                                 continue
 
                             black = dot1.copy()
@@ -602,16 +608,27 @@ class Camera:
                                 black = dot2.copy()
                                 white = dot1.copy()
 
-
                             #correct for height
                             black[0], black[1] = self.correctForHeightOfVehicle(black[0]+x_offset, black[1]+y_offset, self.height_over_ground_black_meters)
                             white[0], white[1] = self.correctForHeightOfVehicle(white[0]+x_offset, white[1]+y_offset, self.height_over_ground_white_meters)
 
-                            
-                            if not updatedVehicle:
-                                updatedVehicle = self.updateVehiclePosition(black[0], black[1], getyaw(black, white), vehicle=vehicle, detect_new_vehicles=False)
+
+                            d = distance(black, predicted_vehicle_position)
+                            if nearest_found_pair is None or d < nearest_found_distance:
+                                nearest_found_pair = [black, white]
+                                nearest_found_distance = d
+
                         else:
                             if self.DEBUG: print(f"too far apart: {distance(dot1, dot2)} px does not meet threshold {self.size_between_black_and_white_center_px}")
+
+
+                            
+
+                            
+                if not updatedVehicle and nearest_found_pair is not None:
+                    black, white = nearest_found_pair
+                    updatedVehicle = self.updateVehiclePosition(black[0], black[1], getyaw(black, white), vehicle=vehicle, detect_new_vehicles=False)
+                
             
             if not updatedVehicle:
                 print(f"did not find vehicle at {vehicle.getPosition()}, yaw: {vehicle.getOrientation()}")

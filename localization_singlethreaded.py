@@ -113,11 +113,11 @@ def main():
             while len(cam.tracked_vehicles) > 0:
                 
                 #update position of each vehicle
-                cam.trackVehicles(dt=delta_t)
+                cam.trackVehicles(dt=delta_t, colorCorrect=True)
 
                 cam.checkFinishLine(top_left=(1000, 950), bottom_right=(1050, 1120))
 
-                #send frame and currently tracked vehicles to other processes
+                #frame for display
                 frame = cam.get_last_frame()
 
                 #end-to-end-delay

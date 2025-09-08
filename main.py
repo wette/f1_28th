@@ -116,7 +116,8 @@ def showImageThread(d: dict, track: Track):
 
             #plot target speed over demanded motor voltage
             i = -1
-            for color in Camera.ColorMap.keys():
+            for vehicle in vehicles:
+                color = vehicle.color
                 if "target_velocity_delta_mps_"+color in d and "motor_voltage_"+color in d:
                     i += 1
                     dy = 100    #height of y axis.
@@ -124,8 +125,8 @@ def showImageThread(d: dict, track: Track):
                     
                     delta_speed_m = d["target_velocity_delta_mps_" +  color]
                     motor_value = d["motor_voltage_" +  color]
-                    history_plot_motor_values[vehicle.color].append((motor_value / 255)*dy)
-                    history_plot_delta_speed[vehicle.color].append((delta_speed_m/3)   *dy)
+                    history_plot_motor_values[color].append((motor_value / 255)*dy)
+                    history_plot_delta_speed[color].append((delta_speed_m/3)   *dy)
 
                     bgr = hueToBGR(Camera.ColorMap[color])
 
@@ -135,7 +136,7 @@ def showImageThread(d: dict, track: Track):
                                plot_height=dy, 
                                title="Velocity delta and applied motor voltage",
                                colors=[bgr, [0,0,0]],
-                               values=[list(history_plot_motor_values[vehicle.color]), list(history_plot_delta_speed[vehicle.color])])
+                               values=[list(history_plot_motor_values[color]), list(history_plot_delta_speed[color])])
 
             #plot vehicle speed and accelerations:
             i = -1
