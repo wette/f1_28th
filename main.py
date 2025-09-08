@@ -170,7 +170,7 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
     command_history = None
 
     #end-to-end-delay
-    end_to_end_delay_s = 0.17#0.13
+    end_to_end_delay_s = 0.15 #0.15
 
     while d["raceEnabled"]:
         start_time = time.time()

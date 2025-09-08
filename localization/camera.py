@@ -48,7 +48,7 @@ class Camera:
             print("Cannot open camera")
             exit()
 
-        self.DEBUG = True
+        self.DEBUG = False
 
         #camera stream properties
         self.vertical_resolution_px = vertical_resolution_px
@@ -133,7 +133,8 @@ class Camera:
         frame = cv.remap(frame, self.remapX, self.remapY, cv.INTER_LINEAR)
 
         #color correct the image
-        frame = self.colorCorrectImage(frame, initializeRatio=initializeColorCorrection)
+        if colorCorrect:
+            frame = self.colorCorrectImage(frame, initializeRatio=initializeColorCorrection)
 
         return frame
 
