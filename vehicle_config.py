@@ -8,8 +8,7 @@ vehicles = {
             "length_m": 0.18,           #vehicle length
             "width_m":  0.08,           #vehicle width
             "rear_axle_offset_m" : 0.065, #rear-center offset of the center of rear axle (where the black Dot on the vehicle is)
-            "max_steering_angle_deg": 45,
-            "steering_angle_offset_deg": 0.0,
+            "steering_measurements" : [],   #TODO: fill out using vehicle_calibration.py
             "min_motor_value" : 80,         #min motor voltage (0-255) to get the vehicle moving
             "max_motor_value" : 160,        #max motor voltage (0-255)
             "lidar_field_of_view_deg": 80, 
@@ -24,8 +23,7 @@ vehicles = {
             "length_m": 0.18,           #vehicle length
             "width_m":  0.08,           #vehicle width
             "rear_axle_offset_m" : 0.065, #rear-center offset of the center of rear axle (where the black Dot on the vehicle is)
-            "max_steering_angle_deg": 40,
-            "steering_angle_offset_deg": 0.0,
+            "steering_measurements" : [],   #TODO: fill out using vehicle_calibration.py
             "min_motor_value" : 60,         #min motor voltage (0-255) to get the vehicle moving
             "max_motor_value" : 150,        #max motor voltage (0-255)
             "lidar_field_of_view_deg": 140, 
@@ -40,8 +38,7 @@ vehicles = {
             "length_m": 0.18,           #vehicle length
             "width_m":  0.08,           #vehicle width
             "rear_axle_offset_m" : 0.065, #rear-center offset of the center of rear axle (where the black Dot on the vehicle is)
-            "max_steering_angle_deg": 40,
-            "steering_angle_offset_deg": 0.0,
+            "steering_measurements" : [],   #TODO: fill out using vehicle_calibration.py
             "min_motor_value" : 100,         #min motor voltage (0-255) to get the vehicle moving
             "max_motor_value" : 190,        #max motor voltage (0-255)
             "lidar_field_of_view_deg": 140, 

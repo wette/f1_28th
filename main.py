@@ -359,8 +359,7 @@ def main():
                     v.setPhysicalProperties(vehicles[v.color]["length_m"], 
                                             vehicles[v.color]["width_m"], 
                                             vehicles[v.color]["rear_axle_offset_m"], 
-                                            vehicles[v.color]["max_steering_angle_deg"], 
-                                            vehicles[v.color]["steering_angle_offset_deg"],
+                                            vehicles[v.color]["steering_measurements"], 
                                             vehicles[v.color]["min_motor_value"],
                                             vehicles[v.color]["max_motor_value"])
                     #setup IP communication

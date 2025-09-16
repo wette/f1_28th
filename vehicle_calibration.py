@@ -13,21 +13,24 @@ def send_steering_pwm(pwm, color):
 
 def main():
     color = "red"
-    print(f"Calibrating steering for the {color} vehicle.")
+    print(f"Calibrating steering for the  #### {color} #### vehicle. Make sure it is turned on.")
+
+    print("turning left is negative steering angle, right positive")
 
     results = []
 
-    car_width = 6.5 / 100
-    wheelbase = 9.4 / 100
+    measurement_points = 20
+    start = 10
+    stop = 170
+    delta = int((stop-start)/measurement_points)
 
-    for pwm in [20, 90, 160]:
-        send_steering_pwm(pwm, color)
-        print("Measure and Input turn cicle diameter in cm from outside to outside")
-        turning_circle = float(input())/100
+    for steering_input in list(range(start, stop, delta)) + [stop]:
+        send_steering_pwm(steering_input, color)
+        print("Measure steering angle in degrees on the vehicle")
+        angle = float(input("Steering Angle [deg]: "))
 
-        angle = math.atan(wheelbase / (turning_circle - car_width)) 
 
-        results.append( (pwm, math.degrees(angle)) )
+        results.append( (steering_input, angle) )
 
     print(results)
 

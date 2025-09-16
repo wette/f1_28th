@@ -25,16 +25,17 @@ class Vehicle:
         self.IP     = None
         self.sock   = None
 
-        #Offset Steering Servo
-        self.servo_offset = 0.0
-        self.max_steering_angle_rad = math.radians(45)
-
         #PID for speed control
         self.motor_pid = None
         self.target_velocity_mps = 0
 
         #PID for steering
         self.steering_pid = None
+
+        #steering map (steering angle -> PWM)
+        self.steering_map : list = None
+        self.steering_map_start_angle_rad = None
+        self.steering_map_end_angle_rad = None
 
         #for filtering steering control
         self.target_steering_angle_rad = 0.0
@@ -87,6 +88,51 @@ class Vehicle:
         self.last_update = 0
 
         self.ttl = 5
+
+    #gets measurements as done by vehicle_calibration.py and converts into steering map
+    def initSteeringMap(self, measurements : list[float]):
+        self.steering_map = []
+        min_angle = measurements[0][1]
+        max_angle = measurements[-1][1]
+
+        self.steering_map_start_angle_rad   = math.radians(min_angle)
+        self.steering_map_end_angle_rad     = math.radians(max_angle)
+
+        num_map_entries = 255
+        for i in range(0, num_map_entries):
+            target_angle = min_angle + ((max_angle-min_angle)/num_map_entries) * i
+
+            #find steering command that leads to target angle
+            next_lower_idx = len(measurements)-2
+            next_higher_idx = len(measurements)-1
+
+            for j in range(0, len(measurements)-1):
+                if measurements[j][1] <= target_angle <= measurements[j+1][1]:
+                    #found
+                    next_lower_idx = j
+                    next_higher_idx = j+1
+                    break
+            
+            #linear interpolation
+            delta_deg = measurements[next_higher_idx][1] - measurements[next_lower_idx][1]
+            diff_deg = target_angle - measurements[next_lower_idx][1]
+
+            delta_contr = measurements[next_higher_idx][0] - measurements[next_lower_idx][0]
+
+            interpolated = measurements[next_lower_idx][0] + (diff_deg/delta_deg) * delta_contr
+
+            self.steering_map.append(interpolated)
+
+    #convert steering angle to control value
+    def getSteeringControlFromMap(self, target_angle_rad):
+        num_map_entries = 255
+
+        index = int(((target_angle_rad - self.steering_map_start_angle_rad) / (self.steering_map_end_angle_rad - self.steering_map_start_angle_rad)) * num_map_entries)
+
+        return self.steering_map[index]
+
+
+
 
     def compute_next_command(self, delta_t : float, opponents : list['Vehicle'] = []):
         x, y, yaw = self.getPositionEstimateCommandHistory(self.last_update + delta_t, longitudinal_offset_m=0.03) #TODO: find out which delta is required here!
@@ -148,14 +194,14 @@ class Vehicle:
 
 
 
-    def setPhysicalProperties(self, length_m, width_m, rear_axle_offset_m, max_steering_angle_deg, steering_angle_offset_deg, min_motor_value, max_motor_value):
+    def setPhysicalProperties(self, length_m, width_m, rear_axle_offset_m, steering_measurements, min_motor_value, max_motor_value):
         self.length_px = length_m * self.meters_to_pixels
         self.width_px = width_m * self.meters_to_pixels
         self.rear_axle_offset_px = rear_axle_offset_m * self.meters_to_pixels
-        self.max_steering_angle_rad = math.radians(max_steering_angle_deg)
-        self.servo_offset = math.radians(steering_angle_offset_deg)
         self.min_motor_value = min_motor_value
         self.max_motor_value = max_motor_value
+
+        self.initSteeringMap(steering_measurements)
 
     def getPosition(self):
         return self.x, self.y
@@ -353,19 +399,13 @@ class Vehicle:
         target_steering_angle_rad = self.steering_pid.update(target_steering_angle_rad)        
 
         #check steering angle is in bounds
-        target_steering_angle_rad = max(-self.max_steering_angle_rad, min(self.max_steering_angle_rad, target_steering_angle_rad))
+        target_steering_angle_rad = max(-self.steering_map_start_angle_rad, min(self.steering_map_end_angle_rad, target_steering_angle_rad))
         #print(f"bounds angle: {math.degrees(target_steering_angle_rad)} - ", end="")
-
-
-
-        #apply offset as given in the vehicle config:
-        target_steering_angle_rad += self.servo_offset
         
 
         #convert steering angle to number between 10 and 170 (for some reason...), 90 beeing 0°, 10 beeing max left, 170 max right
         #target_steering_angle_rad can be between -self.max_steering_angle_rad and +self.max_steering_angle_rad
-        target_angle_percent = target_steering_angle_rad / self.max_steering_angle_rad + 1#between 0 and 2 - one beeing forward steering
-        steering_angle = target_angle_percent*80 + 10
+        steering_angle = self.getSteeringControlFromMap(target_steering_angle_rad)
 
         steering_angle = min(steering_angle, 170) #clip at 170
         steering_angle = max(steering_angle, 10)  #clip at 10
