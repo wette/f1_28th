@@ -173,6 +173,7 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
     loop_time_s = 1.0 / target_control_frequency
     current_motor_value = 0
     pid_control_motor : PIDController = None  #we need to store the motor pid in the process as our copy of the vehicle it not synchronized back to the other processes.
+    pid_control_steer : PIDController = None  #we need to store the motor pid in the process as our copy of the vehicle it not synchronized back to the other processes.
     command_history = None
 
     #end-to-end-delay
@@ -204,8 +205,10 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
         
         if pid_control_motor is None:
             pid_control_motor = v.motor_pid
+            pid_control_steer = v.steering_pid
         else:
             v.motor_pid = pid_control_motor #put in our local copy of the pid controller.
+            v.steering_pid = pid_control_steer
         
         if command_history is None:
             command_history = v.command_history #put in our local copy of the command history
@@ -246,6 +249,40 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
 
 
 def main():
+
+
+    #TEST
+    """v = Vehicle(0,0,0,meters_to_pixels=meters_to_pixels)
+    v.color = "green"
+    v.setPhysicalProperties(vehicles[v.color]["length_m"], 
+                            vehicles[v.color]["width_m"], 
+                            vehicles[v.color]["rear_axle_offset_m"], 
+                            vehicles[v.color]["max_steering_angle_deg"], 
+                            vehicles[v.color]["steering_angle_offset_deg"],
+                            vehicles[v.color]["min_motor_value"],
+                            vehicles[v.color]["max_motor_value"])
+    #setup IP communication
+    v.initNetworkConnection(ip_adress=vehicles[v.color]["ip"], port=vehicles[v.color]["port"])
+
+    #setup motor parameters
+    v.initMotorPID(vehicles[v.color]["motor_pid"][0],
+                    vehicles[v.color]["motor_pid"][1],
+                    vehicles[v.color]["motor_pid"][2],
+                    error_history_length=50)
+    
+    v.initSteeringPID(0.6,
+                      0.0,
+                      0.0,
+                      error_history_length=50)
+
+    while True:
+        v.sendControlsToHardware(0.0,math.radians(0),0.0)
+        input()
+        v.sendControlsToHardware(0.0,math.radians(-40),0.0)
+        input()
+        v.sendControlsToHardware(0.0,math.radians(40),0.0)
+        input()"""
+    # END TEST
 
     #setup camera
     cam = Camera(vertical_resolution_px = vertical_resolution_px,
@@ -310,6 +347,7 @@ def main():
     #list of processes - one for each vehicle to compute steering commands
     control_processes = {}
 
+
     while cam.is_video_stream_active():
         if cam.detectVehicles() > 0:
             print(f"found {len(cam.tracked_vehicles)} vehicles.")
@@ -322,7 +360,9 @@ def main():
                                             vehicles[v.color]["width_m"], 
                                             vehicles[v.color]["rear_axle_offset_m"], 
                                             vehicles[v.color]["max_steering_angle_deg"], 
-                                            vehicles[v.color]["steering_angle_offset_deg"])
+                                            vehicles[v.color]["steering_angle_offset_deg"],
+                                            vehicles[v.color]["min_motor_value"],
+                                            vehicles[v.color]["max_motor_value"])
                     #setup IP communication
                     v.initNetworkConnection(ip_adress=vehicles[v.color]["ip"], port=vehicles[v.color]["port"])
 
@@ -330,6 +370,11 @@ def main():
                     v.initMotorPID(vehicles[v.color]["motor_pid"][0],
                                    vehicles[v.color]["motor_pid"][1],
                                    vehicles[v.color]["motor_pid"][2],
+                                   error_history_length=50)
+                    #setup steering parameters
+                    v.initSteeringPID(vehicles[v.color]["steering_pid"][0],
+                                   vehicles[v.color]["steering_pid"][1],
+                                   vehicles[v.color]["steering_pid"][2],
                                    error_history_length=50)
                     
                     #setup controller
@@ -342,6 +387,7 @@ def main():
                                           field_of_view_deg=vehicles[v.color]["lidar_field_of_view_deg"], 
                                           numRays=vehicles[v.color]["lidar_numRays"], 
                                           rayLength_px=vehicles[v.color]["lidar_rayLength_m"] * meters_to_pixels)
+                
 
                     #create process for controlling:
                     control_processes[v.color] = Process(target=controlVehicleThread, args=(d, v.color, 1.0/frames_per_seconds))

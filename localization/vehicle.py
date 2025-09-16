@@ -33,6 +33,9 @@ class Vehicle:
         self.motor_pid = None
         self.target_velocity_mps = 0
 
+        #PID for steering
+        self.steering_pid = None
+
         #for filtering steering control
         self.target_steering_angle_rad = 0.0
 
@@ -59,6 +62,10 @@ class Vehicle:
 
         #current speed of the vehicle
         self.vehicle_speed = 0 #meters per second; absolute speed
+
+        #min and max voltage (0-255) for motor:
+        self.min_motor_value = 0
+        self.max_motor_value = 0
 
         self.lateral_acceleration_mps = 0
         self.lateral_speed_mps = 0
@@ -141,12 +148,14 @@ class Vehicle:
 
 
 
-    def setPhysicalProperties(self, length_m, width_m, rear_axle_offset_m, max_steering_angle_deg, steering_angle_offset_deg):
+    def setPhysicalProperties(self, length_m, width_m, rear_axle_offset_m, max_steering_angle_deg, steering_angle_offset_deg, min_motor_value, max_motor_value):
         self.length_px = length_m * self.meters_to_pixels
         self.width_px = width_m * self.meters_to_pixels
         self.rear_axle_offset_px = rear_axle_offset_m * self.meters_to_pixels
         self.max_steering_angle_rad = math.radians(max_steering_angle_deg)
         self.servo_offset = math.radians(steering_angle_offset_deg)
+        self.min_motor_value = min_motor_value
+        self.max_motor_value = max_motor_value
 
     def getPosition(self):
         return self.x, self.y
@@ -312,6 +321,10 @@ class Vehicle:
     def initMotorPID(self, kp:float, ki:float, kd:float, error_history_length:int):
         self.motor_pid = PIDController(kp, ki, kd, error_history_length)
 
+    #initialize the PID controler used to control the angle of the vehicle
+    def initSteeringPID(self, kp:float, ki:float, kd:float, error_history_length:int):
+        self.steering_pid = PIDController(kp, ki, kd, error_history_length)
+
     def initNetworkConnection(self, ip_adress:str, port:int):
         self.port = port
         self.IP = ip_adress
@@ -331,29 +344,35 @@ class Vehicle:
         delta_motor_value = self.motor_pid.update(target_velocity_mps - self.vehicle_speed)
         current_motor_value += delta_motor_value
 
-        current_motor_value = int(max(80, min(200, current_motor_value))) #clip between 80 and 240 - keep a minimum motor value to prevent the vehicle from getting stuck.
+        current_motor_value = int(max(self.min_motor_value, min(self.max_motor_value, current_motor_value))) #clip - keep a minimum motor value to prevent the vehicle from getting stuck.
         
-        
+        #current_motor_value = 0.0
         #print(f"unwound angle: {math.degrees(target_steering_angle_rad)} - ", end="")
+
+        #filtering the steering commands.
+        target_steering_angle_rad = self.steering_pid.update(target_steering_angle_rad)        
 
         #check steering angle is in bounds
         target_steering_angle_rad = max(-self.max_steering_angle_rad, min(self.max_steering_angle_rad, target_steering_angle_rad))
         #print(f"bounds angle: {math.degrees(target_steering_angle_rad)} - ", end="")
 
-        #TODO: think about filtering the steering angle to make it more smooth --> another PID controller for steering?
-        target_steering_angle_rad *= 0.6#0.6 # poor man's P controller ;)
+
 
         #apply offset as given in the vehicle config:
         target_steering_angle_rad += self.servo_offset
+        
 
         #convert steering angle to number between 10 and 170 (for some reason...), 90 beeing 0°, 10 beeing max left, 170 max right
         #target_steering_angle_rad can be between -self.max_steering_angle_rad and +self.max_steering_angle_rad
         target_angle_percent = target_steering_angle_rad / self.max_steering_angle_rad + 1#between 0 and 2 - one beeing forward steering
         steering_angle = target_angle_percent*80 + 10
+
         steering_angle = min(steering_angle, 170) #clip at 170
         steering_angle = max(steering_angle, 10)  #clip at 10
 
-        #print(f"PWM steering: {steering_angle}, PWM Motor: {current_motor_value}")
+        
+
+        print(f"PWM steering: {steering_angle}, PWM Motor: {current_motor_value}")
 
         #steering_angle = int(((target_steering_angle_rad/self.max_steering_angle_rad + 1.0) / 0.5) * 160)+10 #TODO: this is most likely NOT what the vehicle expects!
 
