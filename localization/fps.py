@@ -15,6 +15,7 @@ cap.set(cv.CAP_PROP_FRAME_HEIGHT, 1200)
 cap.set(cv.CAP_PROP_FPS, 90)
 
 t = time.time()
+fps = 0.0
 while True:
     ret, frame = cap.read()
 
@@ -25,7 +26,9 @@ while True:
 
     dt = time.time()-t
 
-    print(f"{1.0/dt} FPS at {frame.shape}")
+    fps = 0.99*fps + 0.01*(1.0/dt)
+
+    print(f"{fps} FPS at {frame.shape}")
     t = time.time()
 
 cap.close()

@@ -36,10 +36,13 @@ class Camera:
                  distortionCoefficients = np.array([[ 0.02473071, -0.39668063,  0.00151336,  0.00085757,  0.25759047]]),
                  create_debug_video=False,
                  from_file=None,
-                 simulate_camera=False
+                 simulate_camera=False,
+                 racetrack=None
                  ):
         
         self.cap = None
+
+        self.racetrack = racetrack
         
         if from_file is None:
             #self.cap = cv.VideoCapture(0) #use default camera driver (might not support 90fps)
@@ -339,7 +342,7 @@ class Camera:
                 if d is not None and d < min_dist_px:
                     return False
                 
-                vehicle = Vehicle(xPos, yPos, yaw, self.meters_to_pixels)
+                vehicle = Vehicle(xPos, yPos, yaw, self.meters_to_pixels, racetrack=self.racetrack)
                 vehicle.color = color
                 if self.DEBUG: print(f"Found new Vehicle at {vehicle.getPosition()}, yaw angle {math.degrees(vehicle.getOrientation())}")
                 self.tracked_vehicles.append(vehicle)

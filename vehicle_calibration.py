@@ -12,16 +12,16 @@ def send_steering_pwm(pwm, color):
     sock.sendto(bytes(msg, "utf-8"), (vehicles[color]["ip"], vehicles[color]["port"]))
 
 def main():
-    color = "red"
+    color = "green"
     print(f"Calibrating steering for the  #### {color} #### vehicle. Make sure it is turned on.")
 
     print("turning left is negative steering angle, right positive")
 
     results = []
 
-    measurement_points = 20
-    start = 10
-    stop = 170
+    measurement_points = 10
+    start = 25
+    stop = 160
     delta = int((stop-start)/measurement_points)
 
     for steering_input in list(range(start, stop, delta)) + [stop]:

@@ -127,13 +127,17 @@ class Vehicle:
             
             #linear interpolation
             delta_deg = measurements[next_higher_idx][1] - measurements[next_lower_idx][1]
-            diff_deg = target_angle - measurements[next_lower_idx][1]
+            if delta_deg != 0.0:
+                diff_deg = target_angle - measurements[next_lower_idx][1]
 
-            delta_contr = measurements[next_higher_idx][0] - measurements[next_lower_idx][0]
+                delta_contr = measurements[next_higher_idx][0] - measurements[next_lower_idx][0]
 
-            interpolated = measurements[next_lower_idx][0] + (diff_deg/delta_deg) * delta_contr
+                interpolated = measurements[next_lower_idx][0] + (diff_deg/delta_deg) * delta_contr
 
-            self.steering_map.append(interpolated)
+                self.steering_map.append(interpolated)
+            else:
+                #same values - interpolation is the actual value itself.
+                self.steering_map.append(measurements[next_lower_idx][0])
 
     #convert steering angle to control value
     def getSteeringControlFromMap(self, target_angle_rad):
@@ -141,6 +145,9 @@ class Vehicle:
 
         index = int(((target_angle_rad - self.steering_map_start_angle_rad) / (self.steering_map_end_angle_rad - self.steering_map_start_angle_rad)) * num_map_entries)
         index = max(0, min(index, num_map_entries-1))
+
+        print(f"Steering {math.degrees(target_angle_rad)} deg --> {self.steering_map[index]} ({index})")
+
         return self.steering_map[index]
 
 
@@ -500,7 +507,7 @@ class Vehicle:
         target_steering_angle_rad = self.steering_pid.update(target_steering_angle_rad)        
 
         #check steering angle is in bounds
-        target_steering_angle_rad = max(-self.steering_map_start_angle_rad, min(self.steering_map_end_angle_rad, target_steering_angle_rad))
+        target_steering_angle_rad = max(self.steering_map_start_angle_rad, min(self.steering_map_end_angle_rad, target_steering_angle_rad))
         #print(f"bounds angle: {math.degrees(target_steering_angle_rad)} - ", end="")
         
 

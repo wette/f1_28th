@@ -218,7 +218,9 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
         v.command_frequency_hz = target_control_frequency
 
         #compute vehicle actions
-        target_velocity_mps, target_steering_angle_rad, rays, setpoint = v.compute_next_command(delta_t=end_to_end_delay_s, opponents=opponents)
+        target_velocity_mps, target_steering_angle_rad, rays, setpoint, emer_brake = v.compute_next_command(delta_t=end_to_end_delay_s, opponents=opponents)
+
+        print(math.degrees(target_steering_angle_rad))
 
         #start smoothly:
         if time.time() - smooth_start_time < 1.0:
@@ -227,7 +229,8 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
         #send actions to vehicle
         current_motor_value = v.sendControlsToHardware(target_velocity_mps=target_velocity_mps,
                                                        target_steering_angle_rad=target_steering_angle_rad,
-                                                       current_motor_value=current_motor_value)
+                                                       current_motor_value=current_motor_value,
+                                                       emergency_brake=emer_brake)
 
         
         #forward lidar information to visualization process through the dict.
@@ -318,6 +321,8 @@ def main():
         racetrack.saveToFile("track_borders.npy")
     else:
         racetrack.loadFromFile("track_borders.npy")
+    
+    cam.racetrack = racetrack
 
     print("Do you want to write the camera stream as video to disk for debugging (y/n)?")
     key = input()
@@ -361,7 +366,8 @@ def main():
                                             vehicles[v.color]["rear_axle_offset_m"], 
                                             vehicles[v.color]["steering_measurements"], 
                                             vehicles[v.color]["min_motor_value"],
-                                            vehicles[v.color]["max_motor_value"])
+                                            vehicles[v.color]["max_motor_value"],
+                                            vehicles[v.color]["speed_factor"])
                     #setup IP communication
                     v.initNetworkConnection(ip_adress=vehicles[v.color]["ip"], port=vehicles[v.color]["port"])
 
