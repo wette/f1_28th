@@ -40,6 +40,8 @@ class Vehicle:
         self.steering_map : list = None
         self.steering_map_start_angle_rad = None
         self.steering_map_end_angle_rad = None
+        self.min_steering_angle_deg = -45
+        self.max_steering_angle_deg = 45
 
         #for filtering steering control
         self.target_steering_angle_rad = 0.0
@@ -146,8 +148,6 @@ class Vehicle:
         index = int(((target_angle_rad - self.steering_map_start_angle_rad) / (self.steering_map_end_angle_rad - self.steering_map_start_angle_rad)) * num_map_entries)
         index = max(0, min(index, num_map_entries-1))
 
-        print(f"Steering {math.degrees(target_angle_rad)} deg --> {self.steering_map[index]} ({index})")
-
         return self.steering_map[index]
 
 
@@ -190,9 +190,9 @@ class Vehicle:
         if 5 <= target_steering_angle_deg < 10:
             target_velocity_mps = 1.1
         if 10 <= target_steering_angle_deg < 20:
-            target_velocity_mps = 0.9
+            target_velocity_mps = 1.0
         if 30 <= target_steering_angle_deg:
-            target_velocity_mps = 0.8
+            target_velocity_mps = 0.9
 
         #dist to setpoint: slow down if you are too close to a wall
         #d = math.sqrt((setpoint[0]-x)**2 + (setpoint[1]-y)**2) * (1.0/self.meters_to_pixels)
@@ -243,7 +243,7 @@ class Vehicle:
 
         #to ease overtaking: a vehicle which is getting followed will slow down to let the other pass
         if self.overtaking_followee_counter > 0:
-            target_velocity_mps = max(0.6, target_velocity_mps - (self.overtaking_followee_counter/OVERTAKE_TIME) * 0.4)
+            target_velocity_mps = max(0.5, target_velocity_mps - (self.overtaking_followee_counter/OVERTAKE_TIME) * 0.4)
 
         if max_target_speed_mps is not None:
             target_velocity_mps = min(target_velocity_mps, max_target_speed_mps)
@@ -298,13 +298,23 @@ class Vehicle:
         return None
 
 
-    def setPhysicalProperties(self, length_m, width_m, rear_axle_offset_m, steering_measurements, min_motor_value, max_motor_value, speedFactor):
+    def setPhysicalProperties(self, length_m, 
+                                    width_m, 
+                                    rear_axle_offset_m, 
+                                    steering_measurements, 
+                                    min_motor_value,
+                                    max_motor_value, 
+                                    speedFactor,
+                                    min_steering_angle_deg,
+                                    max_steering_angle_deg):
         self.length_px = length_m * self.meters_to_pixels
         self.width_px = width_m * self.meters_to_pixels
         self.rear_axle_offset_px = rear_axle_offset_m * self.meters_to_pixels
         self.min_motor_value = min_motor_value
         self.max_motor_value = max_motor_value
         self.speedFactor = speedFactor
+        self.min_steering_angle_deg = min_steering_angle_deg
+        self.max_steering_angle_deg = max_steering_angle_deg
 
         self.initSteeringMap(steering_measurements)
 

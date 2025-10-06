@@ -81,8 +81,8 @@ def showImageThread(d: dict, track: Track):
             #draw laptimes:
             i = 0
             for v in vehicles:
-                cv.putText(frame, f"Lap time: {(time.time()-v.time_start_of_lap):.2f}s ({v.last_laptime:.2f}s)", (850, 50+i*20), cv.FONT_HERSHEY_SIMPLEX, 1,
-                        hueToBGR(Camera.ColorMap[vehicle.color]), 2, cv.LINE_AA)
+                cv.putText(frame, f"Lap time: {(time.time()-v.time_start_of_lap):.2f}s ({v.last_laptime:.2f}s)", (850, 50+i*40), cv.FONT_HERSHEY_SIMPLEX, 1,
+                        hueToBGR(Camera.ColorMap[v.color]), 2, cv.LINE_AA)
                 i += 1
 
             #draw racetrack:
@@ -220,7 +220,11 @@ def controlVehicleThread(d: dict, vehicleColor: str, delta_t: float):
         #compute vehicle actions
         target_velocity_mps, target_steering_angle_rad, rays, setpoint, emer_brake = v.compute_next_command(delta_t=end_to_end_delay_s, opponents=opponents)
 
-        print(math.degrees(target_steering_angle_rad))
+        #limit steering angles
+        target_steering_angle_rad = max(math.radians(v.min_steering_angle_deg), 
+                                        min(math.radians(v.max_steering_angle_deg), 
+                                                         target_steering_angle_rad)
+                                    )
 
         #start smoothly:
         if time.time() - smooth_start_time < 1.0:
@@ -316,9 +320,15 @@ def main():
     key = input()
     racetrack = Track()
     if key.upper() == "Y":
-        
-        racetrack.manuallyPickTrackBorders(cam.get_frame())
+        old = cam.minimum_brightness
+        cam.minimum_brightness = 2
+        racetrack.manuallyPickTrackBorders(cam.get_frame(initializeColorCorrection=True))
+
+        cam.minimum_brightness = old
+        cam.get_frame(initializeColorCorrection=True)
+
         racetrack.saveToFile("track_borders.npy")
+        print("Track saved to file.")
     else:
         racetrack.loadFromFile("track_borders.npy")
     
@@ -367,7 +377,9 @@ def main():
                                             vehicles[v.color]["steering_measurements"], 
                                             vehicles[v.color]["min_motor_value"],
                                             vehicles[v.color]["max_motor_value"],
-                                            vehicles[v.color]["speed_factor"])
+                                            vehicles[v.color]["speed_factor"],
+                                            vehicles[v.color]["min_steering_angle"],
+                                            vehicles[v.color]["max_steering_angle"])
                     #setup IP communication
                     v.initNetworkConnection(ip_adress=vehicles[v.color]["ip"], port=vehicles[v.color]["port"])
 

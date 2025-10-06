@@ -126,6 +126,7 @@ class Track:
             # key to change mode for inner bound
             if key == ord("n") and self.mode == "outer":
                 self.mode = "inner"
+                print("Switched to inner outline.")
 
             # key to terminate localisation
             elif key == ord("q"):
