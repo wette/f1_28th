@@ -35,16 +35,20 @@ class Camera:
                             [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]]),
                  distortionCoefficients = np.array([[ 0.02473071, -0.39668063,  0.00151336,  0.00085757,  0.25759047]]),
                  create_debug_video=False,
-                 from_file=None
+                 from_file=None,
+                 simulate_camera=False
                  ):
+        
+        self.cap = None
         
         if from_file is None:
             #self.cap = cv.VideoCapture(0) #use default camera driver (might not support 90fps)
-            self.cap = cv.VideoCapture(0, cv.CAP_V4L) #use V4L to access the camera
+            if not simulate_camera:
+                self.cap = cv.VideoCapture(0, cv.CAP_V4L) #use V4L to access the camera
         else:
             self.cap = cv.VideoCapture(from_file)
         
-        if not self.cap.isOpened():
+        if not simulate_camera and not self.cap.isOpened():
             print("Cannot open camera")
             exit()
 
@@ -102,7 +106,8 @@ class Camera:
         self.time_end = 0
         self.fps_buffer = []
 
-        self.__setup_video_stream__()
+        if not simulate_camera:
+            self.__setup_video_stream__()
 
         self.video_stream_active = True
 

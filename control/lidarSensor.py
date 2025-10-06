@@ -35,7 +35,12 @@ class LidarSensor:
 
         obstacles = [self.track.innerRing, self.track.outerRing]
         for v in opponents:
-            obstacles.append(shapely.Polygon(v.getBoundingBox()))
+            bbox = shapely.Polygon(v.getBoundingBox())
+            if not bbox.contains(vehicleLocation):
+                obstacles.append(bbox)
+            bbox = shapely.Polygon(v.getBoundingBox(at_time=v.last_update+0.1, use_command_history=False))
+            if not bbox.contains(vehicleLocation):
+                obstacles.append(bbox)
 
         for ray in rays:
             dist = []

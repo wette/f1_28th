@@ -4,21 +4,25 @@ import socket
 import struct
 import time
 import shapely
+import copy
 
-from .helper_functions import *
+from localization.helper_functions import *
 from .pid_controller import PIDController
 
 from control.disparity_extender import DisparityExtender
 from control.lidarSensor import LidarSensor
 from control.track import Track
+from control.overtaking_controller import OvertakingController
 
 class Vehicle:
-    def __init__(self, x, y, yaw, meters_to_pixels):
+    def __init__(self, x, y, yaw, meters_to_pixels, racetrack):
         #position and orientation of the vehicle
         self.x = x
         self.y = y
         self.yaw = yaw
         self.yaw_rate = 0.0
+
+        self.track = racetrack
         
         #IP address
         self.port   = None
@@ -67,6 +71,7 @@ class Vehicle:
         #min and max voltage (0-255) for motor:
         self.min_motor_value = 0
         self.max_motor_value = 0
+        self.speedFactor = 1.0  #linear factor to increse/decrease overall target velocity
 
         self.lateral_acceleration_mps = 0
         self.lateral_speed_mps = 0
@@ -80,6 +85,10 @@ class Vehicle:
         self.command_history = [] #history of the issued driving commands
         self.command_frequency_hz = 40.0 #TODO: externalize!
 
+        #data for overtaking
+        self.overtaking_follower_counter = 0
+        self.overtaking_followee_counter = 0
+
         #timekeeping
         self.is_on_finish_line = False
         self.time_start_of_lap = time.time()
@@ -91,6 +100,9 @@ class Vehicle:
 
     #gets measurements as done by vehicle_calibration.py and converts into steering map
     def initSteeringMap(self, measurements : list[float]):
+        if len(measurements) == 0:
+            return
+        
         self.steering_map = []
         min_angle = measurements[0][1]
         max_angle = measurements[-1][1]
@@ -128,7 +140,7 @@ class Vehicle:
         num_map_entries = 255
 
         index = int(((target_angle_rad - self.steering_map_start_angle_rad) / (self.steering_map_end_angle_rad - self.steering_map_start_angle_rad)) * num_map_entries)
-
+        index = max(0, min(index, num_map_entries-1))
         return self.steering_map[index]
 
 
@@ -136,18 +148,24 @@ class Vehicle:
 
     def compute_next_command(self, delta_t : float, opponents : list['Vehicle'] = []):
         x, y, yaw = self.getPositionEstimateCommandHistory(self.last_update + delta_t, longitudinal_offset_m=0.03) #TODO: find out which delta is required here!
-        distances, rays = self.lidar.getReadings(x, y, yaw, opponents = opponents)
 
-        
-        #TODO: this is not very clean as this code is assuming the controler is a disparity extender
-        disparities_indexes, directions = self.controller.find_disparities(distances)
-        modified_distances, setpoint, target_steering_angle_rad = self.controller.extend_disparities(distances, 
-                                                                                          rays, 
-                                                                                          disparities_indexes, 
-                                                                                          directions)
+        #do not include opponents, if we are currently overtaken
+        op = opponents
+        if self.overtaking_followee_counter > 0:
+            op = []
+        distances, rays = self.lidar.getReadings(x, y, yaw, opponents = op)
 
+        #ask controller what to do
+        setpoint, target_steering_angle_rad = self.controller.compute_steering(copy.copy(distances), rays)
+
+        if setpoint is None:
+            return 0.0, 0.0, None, None, False
 
         target_steering_angle_rad = target_steering_angle_rad - self.yaw
+
+        #filter target angle:
+        #new_angle = old_angle*0.5+new_angle*0.5
+        target_steering_angle_rad = get_average_angle([target_steering_angle_rad, self.target_steering_angle_rad])
 
         #unwind target angle
         target_steering_angle_rad = unwind_angle(target_steering_angle_rad)
@@ -169,37 +187,117 @@ class Vehicle:
         if 30 <= target_steering_angle_deg:
             target_velocity_mps = 0.8
 
-        #dist to setpoint
-        d = math.sqrt((setpoint[0]-x)**2 + (setpoint[1]-y)**2) * (1.0/self.meters_to_pixels)
-        if d < 0.15:
-            target_velocity_mps = min(target_velocity_mps, 0.8)
-        
-        """if d < 0.7:
-            target_velocity_mps = min(target_velocity_mps, 1.0)"""
+        #dist to setpoint: slow down if you are too close to a wall
+        #d = math.sqrt((setpoint[0]-x)**2 + (setpoint[1]-y)**2) * (1.0/self.meters_to_pixels)
+        #if d < 0.10:
+        #    target_velocity_mps = min(target_velocity_mps, 0.8)
 
-        #debug: limit target_velocity_mps to fixed value
-        #target_velocity_mps = 0.6
+        #apply speedfactor
+        target_velocity_mps *= self.speedFactor
+
+
+        #be aware of opponents on the track:
+        opponent_we_are_following = self.isFollowingAnOpponent(opponents)
+        followed_by_opponent = self.isFollowedByAnOpponent(opponents)
+
+        OVERTAKE_TIME = 100
+        
+
+        #if we are close to an opponent - just follow
+        if opponent_we_are_following is not None:
+            #target_velocity_mps = 0.2
+            
+            if self.overtaking_followee_counter == 0: #otherwise we have just been passed.
+                print(f"{self.color}: following")
+                self.overtaking_follower_counter = OVERTAKE_TIME
+        else:
+            self.overtaking_follower_counter = max(self.overtaking_follower_counter-1, 0)
+        
+        if followed_by_opponent is not None:
+            if self.overtaking_follower_counter == 0:
+                print(f"{self.color}: i have a follower")
+                self.overtaking_followee_counter = OVERTAKE_TIME
+        else:
+            self.overtaking_followee_counter = max(self.overtaking_followee_counter-1, 0)
+
+
+        #test new overtaking controller:
+        # if we are between 10 and 20 cm behind an opponent, activate overtaking controller.
+        #the controller will get the vehicle in a position where it can overtake using the normal controller
+        
+        max_target_speed_mps = None
+        if opponent_we_are_following and self.overtaking_followee_counter == 0:
+            #activate overtake controller
+            overtake_ctrl = OvertakingController(self.width_px/self.meters_to_pixels,
+                                                        self.track,
+                                                        self.meters_to_pixels)
+            setpoint, target_steering_angle_rad, max_target_speed_mps = overtake_ctrl.compute_steering(self.x, self.y, self.yaw, opponent_we_are_following)
+                              
+
+        #to ease overtaking: a vehicle which is getting followed will slow down to let the other pass
+        if self.overtaking_followee_counter > 0:
+            target_velocity_mps = max(0.6, target_velocity_mps - (self.overtaking_followee_counter/OVERTAKE_TIME) * 0.4)
+
+        if max_target_speed_mps is not None:
+            target_velocity_mps = min(target_velocity_mps, max_target_speed_mps)
+
+
+        #check for emeregency brake: if the rays right in front of the vehicle (+/- 8 deg) are close to zero
+        emeregency_brake = False
+
+        
+        required_space_px = self.length_px - self.rear_axle_offset_px - 0.02*self.meters_to_pixels #don't be too much on the grass
+
+        total_num_rays = len(distances)
+        lidar_fov_rad = self.lidar.fov_rad
+        relevant_num_rays = int( (math.radians(16)/lidar_fov_rad) * total_num_rays )
+        start_idx = max(int(total_num_rays/2) - int(relevant_num_rays/2), 0)
+        end_idx = min(int(total_num_rays/2) + int(relevant_num_rays/2), total_num_rays)
+        available_space_px = np.min(distances[start_idx:end_idx])
+        #print(total_num_rays, relevant_num_rays, start_idx, end_idx, available_space_px, required_space_px)
+        #print(distances[start_idx:end_idx])
+        if available_space_px < required_space_px:
+            #brake!
+            if self.getSpeed() > 0.05:  #make sure we never come to a true full stop.
+                emeregency_brake = True
+
 
 
         self.target_velocity_mps = target_velocity_mps
-
-        #smoothing out steering angle.
-        #target_steering_angle_rad = 0.7*target_steering_angle_rad + 0.3*self.target_steering_angle_rad
         self.target_steering_angle_rad = target_steering_angle_rad
 
-        if self.getSpeed() > 1.0:
-            target_steering_angle_deg = max(-15, min(15, target_steering_angle_deg)) #if too fast - limit steering angle to +/- 15°
-
-        return target_velocity_mps, target_steering_angle_rad, rays, setpoint
+        return target_velocity_mps, target_steering_angle_rad, rays, setpoint, emeregency_brake
 
 
+    def isFollowingAnOpponent(self, opponents : list['Vehicle']) -> 'Vehicle':
+        closestOpponent = None
+        for opp in opponents:
+            dist = distance([self.x, self.y], [opp.x, opp.y])/self.meters_to_pixels
+            angle = getyaw([self.x, self.y], [opp.x, opp.y])
+            angle = abs(difference_in_angle(angle, self.yaw))
 
-    def setPhysicalProperties(self, length_m, width_m, rear_axle_offset_m, steering_measurements, min_motor_value, max_motor_value):
+            v_len = self.length_px/self.meters_to_pixels/2.0
+            if angle < math.radians(90) and (0.1+v_len <= dist <= 0.2+v_len):
+                closestOpponent = opp
+                break
+
+        return closestOpponent
+    
+    def isFollowedByAnOpponent(self, opponents : list['Vehicle']) -> 'Vehicle':
+        for opp in opponents:
+            if opp.isFollowingAnOpponent([self]):
+                 return opp
+
+        return None
+
+
+    def setPhysicalProperties(self, length_m, width_m, rear_axle_offset_m, steering_measurements, min_motor_value, max_motor_value, speedFactor):
         self.length_px = length_m * self.meters_to_pixels
         self.width_px = width_m * self.meters_to_pixels
         self.rear_axle_offset_px = rear_axle_offset_m * self.meters_to_pixels
         self.min_motor_value = min_motor_value
         self.max_motor_value = max_motor_value
+        self.speedFactor = speedFactor
 
         self.initSteeringMap(steering_measurements)
 
@@ -224,19 +322,6 @@ class Vehicle:
 
         if speed < 0.05:
             speed = 0.0     #standstill
-
-        #direction: forwards or backwards?
-        #TODO: fix bug by unwinding angles. otherwise compare does not work.
-        """angle_of_movement = getyaw( (self.x, self.y), (x, y) )
-        forwards_motion = False
-        if math.radians(-45) < angle_of_movement - yaw < math.radians(45):
-            #movement along positive x axis of the vehicle
-            forwards_motion = True
-        
-        if not forwards_motion:
-            speed *= -1.0
-
-        print(f"angle_of_movement: {math.degrees(angle_of_movement)}, forwards: {forwards_motion}")"""
 
         speed = speed / self.meters_to_pixels #convert to m/s
 
@@ -275,10 +360,11 @@ class Vehicle:
 
         #simple linear extrapolation in direction of the vehicle.
         distance = (dt * self.vehicle_speed + longitudinal_offset_m) * self.meters_to_pixels
-        dx, dy = rotate(distance, 0.0, unwind_angle(self.yaw + self.yaw_rate*dt))
+        yaw_rate = (self.vehicle_speed / self.wheel_base_m) * math.sin(self.target_steering_angle_rad)
+        dx, dy = rotate(distance, 0.0, unwind_angle(self.yaw + yaw_rate*dt))
         x1 = self.x + dx
         y1 = self.y + dy
-        yaw1 = unwind_angle(self.yaw + self.yaw_rate*dt)
+        yaw1 = unwind_angle(self.yaw + yaw_rate*dt)
 
         return x1, y1, yaw1
     
@@ -334,11 +420,14 @@ class Vehicle:
     
     #returns coordinates of a boundingbox of the vehicle.
     #at at_time is not None: projected into future.
-    def getBoundingBox(self, at_time = None):
+    def getBoundingBox(self, at_time = None, use_command_history=True):
         pos_x, pos_y = self.getPosition()
         yaw = self.getOrientation()
         if at_time is not None:
-            pos_x, pos_y, yaw = self.getPositionEstimateCommandHistory(at_time)
+            if use_command_history:
+                pos_x, pos_y, yaw = self.getPositionEstimateCommandHistory(at_time)
+            else:
+                pos_x, pos_y, yaw = self.getPositionEstimate(at_time)
 
         #define boundingbox in vehicle coordinate system (vehicle drives along x axis)
         bottom_left  = numpy.array([ -self.rear_axle_offset_px, int(-self.width_px/2) ])
@@ -381,18 +470,30 @@ class Vehicle:
     # target_steering_angle_rad:    target steering angle of the vehicle. in map coordiates.
     #                               positive is to the right
     # current_motor_value:          the (voltage) value last set for the vehicle
+    # emergency_brake:              true to bring vehicle to complete stop.
     #
     # returns:
     # current_motor_value:          the value just set for the motor
-    def sendControlsToHardware(self, target_velocity_mps:float, target_steering_angle_rad:float, current_motor_value:int, simulate=False):
+    def sendControlsToHardware(self, target_velocity_mps:float, target_steering_angle_rad:float, current_motor_value:int, emergency_brake:bool = False, simulate=False):
+
+        if emergency_brake:
+            target_velocity_mps = 0.0
 
         #ask PID control what to do with the motor voltage
         delta_motor_value = self.motor_pid.update(target_velocity_mps - self.vehicle_speed)
         current_motor_value += delta_motor_value
 
-        current_motor_value = int(max(self.min_motor_value, min(self.max_motor_value, current_motor_value))) #clip - keep a minimum motor value to prevent the vehicle from getting stuck.
+        #clip - keep a minimum motor value to prevent the vehicle from getting stuck.
+        #but only if the target_velocity_mps is greater zero. otherwise we would prevent hard braking
+        if target_velocity_mps >= 0.01:
+            current_motor_value = int(max(self.min_motor_value, min(self.max_motor_value, current_motor_value))) 
+        else:
+            current_motor_value = int(max(0, min(self.max_motor_value, current_motor_value))) 
         
-        #current_motor_value = 0.0
+
+        if emergency_brake:
+            current_motor_value = 0.0
+
         #print(f"unwound angle: {math.degrees(target_steering_angle_rad)} - ", end="")
 
         #filtering the steering commands.
@@ -412,7 +513,7 @@ class Vehicle:
 
         
 
-        print(f"PWM steering: {steering_angle}, PWM Motor: {current_motor_value}")
+        #print(f"PWM steering: {steering_angle}, PWM Motor: {current_motor_value}")
 
         #steering_angle = int(((target_steering_angle_rad/self.max_steering_angle_rad + 1.0) / 0.5) * 160)+10 #TODO: this is most likely NOT what the vehicle expects!
 

@@ -42,9 +42,15 @@ class Track:
             self.innerRing = LinearRing(self.innerBounds)
             self.outerRing = LinearRing(self.outerBounds)
 
+            
             #test: make inner ring a litte larger:
-            newInnerRing = self.innerRing.buffer(20, single_sided=False).exterior
+            """newInnerRing = self.innerRing.buffer(20, single_sided=False).exterior
             newOuterRing = self.outerRing.buffer(10, single_sided=True).exterior
+            
+            self.innerRing = newInnerRing
+            self.outerRing = newOuterRing
+            """
+
             """import matplotlib.pyplot as plt
             from shapely.plotting import plot_polygon, plot_line
             fig = plt.figure(1, figsize=(10, 10), dpi=90)
@@ -54,8 +60,6 @@ class Track:
             plot_line(newInnerRing, ax=ax, add_points=False, color="red", linewidth=1)
             plot_line(newOuterRing, ax=ax, add_points=False, color="blue", linewidth=1)
             plt.show()"""
-            self.innerRing = newInnerRing
-            self.outerRing = newOuterRing
 
 
         except Exception as e:
